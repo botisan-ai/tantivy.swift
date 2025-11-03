@@ -4,6 +4,7 @@
   edition = "2024"
 
 [dependencies]
+serde = "1.0.228"
   serde_json = "1.0.145"
   # FIXME: currently there is trouble compiling zstd into iOS targets, so we disable it here
   tantivy = { version = "0.25.0", default-features = false, features = [

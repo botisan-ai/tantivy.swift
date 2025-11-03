@@ -2,6 +2,7 @@
 
 set -ex
 
+rm -rf ./build
 rm -rf ./out
 
 # build and bindgen

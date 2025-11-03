@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -7,6 +8,21 @@ use tantivy::IndexWriter;
 use tantivy::directory::MmapDirectory;
 use tantivy::doc;
 use tantivy::schema::*;
+
+#[derive(Serialize, Deserialize, uniffi::Record)]
+pub struct ReceiptSearchResult {
+    pub item: ReceiptIndexItem,
+    pub score: f32,
+}
+
+#[derive(Serialize, Deserialize, uniffi::Record)]
+pub struct ReceiptIndexItem {
+    pub receipt_id: String,
+    pub merchant_name: String,
+    pub transaction_date: String, // ISO 8601 format
+    pub converted_total: f64,
+    pub tags: Vec<String>,
+}
 
 // uniffi is powerful, we can technically expose tantivy directly, but it's better to wrap it in our own types for development speed for now.
 // this means that the schema is fixed for the build binary, and for each project we will need to recompile the rust code to change the schema.
@@ -34,6 +50,7 @@ impl ReceiptIndex {
 
         schema_builder.add_text_field("receipt_id", STRING | STORED);
         schema_builder.add_text_field("merchant_name", TEXT | STORED);
+        schema_builder.add_text_field("notes", TEXT | STORED);
         schema_builder.add_date_field("transaction_date", INDEXED | STORED);
         schema_builder.add_f64_field("converted_total", STORED | FAST);
         schema_builder.add_text_field("tags", STRING | STORED);
@@ -42,7 +59,7 @@ impl ReceiptIndex {
 
         let index = Index::open_or_create(directory, schema).unwrap();
 
-        let mut writer = index
+        let writer = index
             .writer(
                 // 100 MB heap size
                 100_000_000,
@@ -80,17 +97,35 @@ impl ReceiptIndex {
         self.reader.reload().unwrap();
     }
 
-    fn search_receipts(&self, query_str: String) -> String {
+    #[uniffi::method]
+    fn receipt_id_exists(&self, receipt_id: String) -> bool {
         let schema = self.index.schema();
         let receipt_id_field = schema.get_field("receipt_id").unwrap();
+        let term = tantivy::Term::from_field_text(receipt_id_field, &receipt_id);
+
+        let searcher = self.reader.searcher();
+
+        let query = tantivy::query::TermQuery::new(term, tantivy::schema::IndexRecordOption::Basic);
+
+        let top_docs = searcher
+            .search(&query, &tantivy::collector::TopDocs::with_limit(1))
+            .unwrap();
+
+        !top_docs.is_empty()
+    }
+
+    #[uniffi::method]
+    fn search_receipts(&self, query_str: String) -> Vec<ReceiptSearchResult> {
+        let schema = self.index.schema();
         let merchant_name_field = schema.get_field("merchant_name").unwrap();
+        let notes_field = schema.get_field("notes").unwrap();
         let tags_field = schema.get_field("tags").unwrap();
 
         let searcher = self.reader.searcher();
 
         let query = tantivy::query::QueryParser::for_index(
             &self.index,
-            vec![merchant_name_field, tags_field],
+            vec![merchant_name_field, notes_field, tags_field],
         )
         .parse_query_lenient(&query_str)
         .0;
@@ -99,20 +134,50 @@ impl ReceiptIndex {
             .search(&query, &tantivy::collector::TopDocs::with_limit(20))
             .unwrap();
 
-        let mut results: Vec<String> = Vec::new();
+        let mut results: Vec<ReceiptSearchResult> = Vec::new();
 
-        for (_score, doc_address) in top_docs {
+        for (score, doc_address) in top_docs {
             let retrieved_doc: TantivyDocument = searcher.doc(doc_address).unwrap();
-            let receipt_id = retrieved_doc
-                .get_first(receipt_id_field)
-                .unwrap()
-                .as_str()
-                .unwrap()
-                .to_string();
-            results.push(receipt_id);
+            let receipt_item = ReceiptIndexItem {
+                receipt_id: retrieved_doc
+                    .get_first(schema.get_field("receipt_id").unwrap())
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                merchant_name: retrieved_doc
+                    .get_first(schema.get_field("merchant_name").unwrap())
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                transaction_date: retrieved_doc
+                    .get_first(schema.get_field("transaction_date").unwrap())
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                converted_total: retrieved_doc
+                    .get_first(schema.get_field("converted_total").unwrap())
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0),
+                tags: retrieved_doc
+                    .get_all(schema.get_field("tags").unwrap())
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect(),
+            };
+            results.push(ReceiptSearchResult {
+                item: receipt_item,
+                score,
+            });
         }
 
-        serde_json::to_string(&results).unwrap()
+        results
+    }
+
+    #[uniffi::method]
+    fn clear_index(&self) {
+        let mut writer = self.writer.lock().unwrap();
+        writer.delete_all_documents().unwrap();
+        writer.commit().unwrap();
+        self.reader.reload().unwrap();
     }
 }
 
