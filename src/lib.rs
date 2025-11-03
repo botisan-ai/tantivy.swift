@@ -79,9 +79,11 @@ impl ReceiptIndex {
     }
 
     #[uniffi::method]
-    fn index_receipt(&self, receipt_json: String) {
+    fn index_receipt(&self, item: ReceiptIndexItem) {
         let schema = self.index.schema();
-        let doc = TantivyDocument::parse_json(&schema, &receipt_json).unwrap();
+        // a weird way to set up a doc, should probably just create the doc directly.
+        let receipt_item_json = serde_json::to_string(&item).unwrap();
+        let doc = TantivyDocument::parse_json(&schema, &receipt_item_json).unwrap();
         let mut writer = self.writer.lock().unwrap();
         writer.add_document(doc).unwrap();
         writer.commit().unwrap();
