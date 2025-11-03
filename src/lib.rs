@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Mutex;
+use tantivy::tokenizer::LowerCaser;
+use tantivy::tokenizer::TextAnalyzer;
 
 use tantivy::Index;
 use tantivy::IndexReader;
@@ -10,6 +12,7 @@ use tantivy::doc;
 use tantivy::schema::*;
 
 mod unicode_tokenizer;
+use crate::unicode_tokenizer::UnicodeTokenizer;
 
 #[derive(Serialize, Deserialize, uniffi::Record)]
 pub struct ReceiptSearchResult {
@@ -24,6 +27,52 @@ pub struct ReceiptIndexItem {
     pub transaction_date: String, // ISO 8601 format
     pub converted_total: f64,
     pub tags: Vec<String>,
+}
+
+impl ReceiptIndexItem {
+    pub fn new(
+        receipt_id: String,
+        merchant_name: String,
+        transaction_date: String,
+        converted_total: f64,
+        tags: Vec<String>,
+    ) -> Self {
+        ReceiptIndexItem {
+            receipt_id,
+            merchant_name,
+            transaction_date,
+            converted_total,
+            tags,
+        }
+    }
+
+    pub fn from_tantivy_doc(doc: TantivyDocument, schema: Schema) -> Self {
+        ReceiptIndexItem {
+            receipt_id: doc
+                .get_first(schema.get_field("receipt_id").unwrap())
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            merchant_name: doc
+                .get_first(schema.get_field("merchant_name").unwrap())
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            transaction_date: doc
+                .get_first(schema.get_field("transaction_date").unwrap())
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            converted_total: doc
+                .get_first(schema.get_field("converted_total").unwrap())
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0),
+            tags: doc
+                .get_all(schema.get_field("tags").unwrap())
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect(),
+        }
+    }
 }
 
 // uniffi is powerful, we can technically expose tantivy directly, but it's better to wrap it in our own types for development speed for now.
@@ -50,9 +99,16 @@ impl ReceiptIndex {
         // TODO: make schema configurable
         let mut schema_builder = Schema::builder();
 
+        let text_field_indexing = TextFieldIndexing::default()
+            .set_tokenizer("unicode")
+            .set_index_option(IndexRecordOption::WithFreqsAndPositions);
+        let text_options = TextOptions::default()
+            .set_indexing_options(text_field_indexing)
+            .set_stored();
+
         schema_builder.add_text_field("receipt_id", STRING | STORED);
-        schema_builder.add_text_field("merchant_name", TEXT | STORED);
-        schema_builder.add_text_field("notes", TEXT | STORED);
+        schema_builder.add_text_field("merchant_name", text_options.clone());
+        schema_builder.add_text_field("notes", text_options.clone());
         schema_builder.add_date_field("transaction_date", INDEXED | STORED);
         schema_builder.add_f64_field("converted_total", STORED | FAST);
         schema_builder.add_text_field("tags", STRING | STORED);
@@ -60,6 +116,12 @@ impl ReceiptIndex {
         let schema = schema_builder.build();
 
         let index = Index::open_or_create(directory, schema).unwrap();
+
+        let tokenizer = TextAnalyzer::builder(UnicodeTokenizer::default())
+            .filter(LowerCaser)
+            .build();
+
+        index.tokenizers().register("unicode", tokenizer);
 
         let writer = index
             .writer(
@@ -142,31 +204,7 @@ impl ReceiptIndex {
 
         for (score, doc_address) in top_docs {
             let retrieved_doc: TantivyDocument = searcher.doc(doc_address).unwrap();
-            let receipt_item = ReceiptIndexItem {
-                receipt_id: retrieved_doc
-                    .get_first(schema.get_field("receipt_id").unwrap())
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                merchant_name: retrieved_doc
-                    .get_first(schema.get_field("merchant_name").unwrap())
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                transaction_date: retrieved_doc
-                    .get_first(schema.get_field("transaction_date").unwrap())
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                converted_total: retrieved_doc
-                    .get_first(schema.get_field("converted_total").unwrap())
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0),
-                tags: retrieved_doc
-                    .get_all(schema.get_field("tags").unwrap())
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect(),
-            };
+            let receipt_item = ReceiptIndexItem::from_tantivy_doc(retrieved_doc, schema.clone());
             results.push(ReceiptSearchResult {
                 item: receipt_item,
                 score,
