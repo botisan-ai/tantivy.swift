@@ -9,6 +9,8 @@ use tantivy::directory::MmapDirectory;
 use tantivy::doc;
 use tantivy::schema::*;
 
+mod unicode_tokenizer;
+
 #[derive(Serialize, Deserialize, uniffi::Record)]
 pub struct ReceiptSearchResult {
     pub item: ReceiptIndexItem,
