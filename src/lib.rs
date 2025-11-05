@@ -1,15 +1,28 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Mutex;
-use tantivy::tokenizer::LowerCaser;
-use tantivy::tokenizer::TextAnalyzer;
+use tantivy::tokenizer::AsciiFoldingFilter;
 
 use tantivy::Index;
 use tantivy::IndexReader;
 use tantivy::IndexWriter;
+use tantivy::TantivyDocument;
+use tantivy::collector::TopDocs;
 use tantivy::directory::MmapDirectory;
 use tantivy::doc;
-use tantivy::schema::*;
+use tantivy::query::QueryParser;
+use tantivy::query::TermQuery;
+use tantivy::schema::FAST;
+use tantivy::schema::INDEXED;
+use tantivy::schema::IndexRecordOption;
+use tantivy::schema::STORED;
+use tantivy::schema::STRING;
+use tantivy::schema::Schema;
+use tantivy::schema::TextFieldIndexing;
+use tantivy::schema::TextOptions;
+use tantivy::schema::Value;
+use tantivy::tokenizer::LowerCaser;
+use tantivy::tokenizer::TextAnalyzer;
 
 mod unicode_tokenizer;
 use crate::unicode_tokenizer::UnicodeTokenizer;
@@ -24,6 +37,7 @@ pub struct ReceiptSearchResult {
 pub struct ReceiptIndexItem {
     pub receipt_id: String,
     pub merchant_name: String,
+    pub notes: String,
     pub transaction_date: String, // ISO 8601 format
     pub converted_total: f64,
     pub tags: Vec<String>,
@@ -33,6 +47,7 @@ impl ReceiptIndexItem {
     pub fn new(
         receipt_id: String,
         merchant_name: String,
+        notes: String,
         transaction_date: String,
         converted_total: f64,
         tags: Vec<String>,
@@ -40,6 +55,7 @@ impl ReceiptIndexItem {
         ReceiptIndexItem {
             receipt_id,
             merchant_name,
+            notes,
             transaction_date,
             converted_total,
             tags,
@@ -55,6 +71,11 @@ impl ReceiptIndexItem {
                 .to_string(),
             merchant_name: doc
                 .get_first(schema.get_field("merchant_name").unwrap())
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            notes: doc
+                .get_first(schema.get_field("notes").unwrap())
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string(),
@@ -119,6 +140,7 @@ impl ReceiptIndex {
 
         let tokenizer = TextAnalyzer::builder(UnicodeTokenizer::default())
             .filter(LowerCaser)
+            .filter(AsciiFoldingFilter)
             .build();
 
         index.tokenizers().register("unicode", tokenizer);
@@ -171,11 +193,9 @@ impl ReceiptIndex {
 
         let searcher = self.reader.searcher();
 
-        let query = tantivy::query::TermQuery::new(term, tantivy::schema::IndexRecordOption::Basic);
+        let query = TermQuery::new(term, IndexRecordOption::Basic);
 
-        let top_docs = searcher
-            .search(&query, &tantivy::collector::TopDocs::with_limit(1))
-            .unwrap();
+        let top_docs = searcher.search(&query, &TopDocs::with_limit(1)).unwrap();
 
         !top_docs.is_empty()
     }
@@ -189,16 +209,17 @@ impl ReceiptIndex {
 
         let searcher = self.reader.searcher();
 
-        let query = tantivy::query::QueryParser::for_index(
+        let mut query_parser = QueryParser::for_index(
             &self.index,
             vec![merchant_name_field, notes_field, tags_field],
-        )
-        .parse_query_lenient(&query_str)
-        .0;
+        );
 
-        let top_docs = searcher
-            .search(&query, &tantivy::collector::TopDocs::with_limit(20))
-            .unwrap();
+        query_parser.set_field_fuzzy(merchant_name_field, true, 2, false);
+        query_parser.set_field_fuzzy(notes_field, true, 2, false);
+
+        let query = query_parser.parse_query_lenient(&query_str).0;
+
+        let top_docs = searcher.search(&query, &TopDocs::with_limit(20)).unwrap();
 
         let mut results: Vec<ReceiptSearchResult> = Vec::new();
 
