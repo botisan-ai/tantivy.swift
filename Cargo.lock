@@ -1191,6 +1191,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tantivy",
+ "thiserror",
  "unicode-segmentation",
  "uniffi",
 ]

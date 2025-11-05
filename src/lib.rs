@@ -7,6 +7,7 @@ use tantivy::Index;
 use tantivy::IndexReader;
 use tantivy::IndexWriter;
 use tantivy::TantivyDocument;
+use tantivy::Term;
 use tantivy::collector::TopDocs;
 use tantivy::directory::MmapDirectory;
 use tantivy::doc;
@@ -26,6 +27,23 @@ use tantivy::tokenizer::TextAnalyzer;
 
 mod unicode_tokenizer;
 use crate::unicode_tokenizer::UnicodeTokenizer;
+
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+#[uniffi(flat_error)]
+pub enum ReceiptIndexError {
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("Open directory error: {0}")]
+    OpenDirectoryError(#[from] tantivy::directory::error::OpenDirectoryError),
+    #[error("Tantivy error: {0}")]
+    TantivyError(#[from] tantivy::TantivyError),
+    #[error("Serialization error: {0}")]
+    SerializationError(#[from] serde_json::Error),
+    #[error("Document parsing error: {0}")]
+    DocParsingError(#[from] tantivy::schema::document::DocParsingError),
+    #[error("Index writer acquisition error")]
+    WriterAcquisitionError,
+}
 
 #[derive(Serialize, Deserialize, uniffi::Record)]
 pub struct ReceiptSearchResult {
@@ -108,13 +126,19 @@ pub struct ReceiptIndex {
 #[uniffi::export]
 impl ReceiptIndex {
     #[uniffi::constructor]
-    pub fn new(path: String) -> Self {
+    pub fn new(path: String) -> Result<Self, ReceiptIndexError> {
         let index_path = Path::new(&path);
 
-        let directory = MmapDirectory::open(index_path).unwrap_or_else(|_| {
-            std::fs::create_dir_all(index_path).unwrap();
-            MmapDirectory::open(index_path).unwrap()
-        });
+        let directory = match MmapDirectory::open(index_path) {
+            Ok(dir) => dir,
+            Err(_) => match std::fs::create_dir_all(index_path) {
+                Ok(_) => match MmapDirectory::open(index_path) {
+                    Ok(dir) => dir,
+                    Err(e) => return Err(ReceiptIndexError::OpenDirectoryError(e)),
+                },
+                Err(e) => return Err(ReceiptIndexError::IoError(e)),
+            },
+        };
 
         // create schema
         // TODO: make schema configurable
@@ -123,6 +147,7 @@ impl ReceiptIndex {
         let text_field_indexing = TextFieldIndexing::default()
             .set_tokenizer("unicode")
             .set_index_option(IndexRecordOption::WithFreqsAndPositions);
+
         let text_options = TextOptions::default()
             .set_indexing_options(text_field_indexing)
             .set_stored();
@@ -136,7 +161,10 @@ impl ReceiptIndex {
 
         let schema = schema_builder.build();
 
-        let index = Index::open_or_create(directory, schema).unwrap();
+        let index = match Index::open_or_create(directory, schema) {
+            Ok(idx) => idx,
+            Err(e) => return Err(ReceiptIndexError::TantivyError(e)),
+        };
 
         let tokenizer = TextAnalyzer::builder(UnicodeTokenizer::default())
             .filter(LowerCaser)
@@ -145,67 +173,117 @@ impl ReceiptIndex {
 
         index.tokenizers().register("unicode", tokenizer);
 
-        let writer = index
-            .writer(
-                // 100 MB heap size
-                100_000_000,
-            )
-            .unwrap();
+        let writer = match index.writer(
+            // 100 MB heap size
+            100_000_000,
+        ) {
+            Ok(wtr) => wtr,
+            Err(e) => return Err(ReceiptIndexError::TantivyError(e)),
+        };
 
         // or, create a reader with reload policy that reloads on commit
-        let reader = index.reader().unwrap();
+        let reader = match index.reader() {
+            Ok(rdr) => rdr,
+            Err(e) => return Err(ReceiptIndexError::TantivyError(e)),
+        };
 
-        ReceiptIndex {
+        Ok(ReceiptIndex {
             index,
             writer: Mutex::new(writer),
             reader,
-        }
+        })
     }
 
     #[uniffi::method]
-    fn index_receipt(&self, item: ReceiptIndexItem) {
+    fn index_receipt(&self, item: ReceiptIndexItem) -> Result<(), ReceiptIndexError> {
         let schema = self.index.schema();
+
         // a weird way to set up a doc, should probably just create the doc directly.
-        let receipt_item_json = serde_json::to_string(&item).unwrap();
-        let doc = TantivyDocument::parse_json(&schema, &receipt_item_json).unwrap();
-        let mut writer = self.writer.lock().unwrap();
-        writer.add_document(doc).unwrap();
-        writer.commit().unwrap();
-        self.reader.reload().unwrap();
+        let receipt_item_json = serde_json::to_string(&item)?;
+
+        let doc = TantivyDocument::parse_json(&schema, &receipt_item_json)?;
+
+        // acquire the writer lock
+        let mut writer = match self.writer.lock() {
+            Ok(wtr) => wtr,
+            Err(_) => return Err(ReceiptIndexError::WriterAcquisitionError),
+        };
+
+        writer.add_document(doc)?;
+        writer.commit()?;
+        self.reader.reload()?;
+
+        Ok(())
     }
 
     #[uniffi::method]
-    fn delete_receipt(&self, receipt_id: String) {
+    fn index_receipts(&self, items: Vec<ReceiptIndexItem>) -> Result<(), ReceiptIndexError> {
         let schema = self.index.schema();
-        let receipt_id_field = schema.get_field("receipt_id").unwrap();
-        let term = tantivy::Term::from_field_text(receipt_id_field, &receipt_id);
-        let mut writer = self.writer.lock().unwrap();
+
+        // acquire the writer lock
+        let mut writer = match self.writer.lock() {
+            Ok(wtr) => wtr,
+            Err(_) => return Err(ReceiptIndexError::WriterAcquisitionError),
+        };
+
+        for item in items {
+            let receipt_item_json = serde_json::to_string(&item)?;
+
+            let doc = TantivyDocument::parse_json(&schema, &receipt_item_json)?;
+
+            writer.add_document(doc)?;
+        }
+
+        writer.commit()?;
+        self.reader.reload()?;
+
+        Ok(())
+    }
+
+    #[uniffi::method]
+    fn delete_receipt(&self, receipt_id: String) -> Result<(), ReceiptIndexError> {
+        let schema = self.index.schema();
+
+        let receipt_id_field = schema.get_field("receipt_id")?;
+
+        let term = Term::from_field_text(receipt_id_field, &receipt_id);
+
+        // acquire the writer lock
+        let mut writer = match self.writer.lock() {
+            Ok(wtr) => wtr,
+            Err(_) => return Err(ReceiptIndexError::WriterAcquisitionError),
+        };
+
         writer.delete_term(term);
-        writer.commit().unwrap();
-        self.reader.reload().unwrap();
+        writer.commit()?;
+        self.reader.reload()?;
+
+        Ok(())
     }
 
     #[uniffi::method]
-    fn receipt_id_exists(&self, receipt_id: String) -> bool {
+    fn receipt_id_exists(&self, receipt_id: String) -> Result<bool, ReceiptIndexError> {
         let schema = self.index.schema();
-        let receipt_id_field = schema.get_field("receipt_id").unwrap();
-        let term = tantivy::Term::from_field_text(receipt_id_field, &receipt_id);
+        let receipt_id_field = schema.get_field("receipt_id")?;
+
+        let term = Term::from_field_text(receipt_id_field, &receipt_id);
 
         let searcher = self.reader.searcher();
-
         let query = TermQuery::new(term, IndexRecordOption::Basic);
+        let top_docs = searcher.search(&query, &TopDocs::with_limit(1))?;
 
-        let top_docs = searcher.search(&query, &TopDocs::with_limit(1)).unwrap();
-
-        !top_docs.is_empty()
+        Ok(!top_docs.is_empty())
     }
 
     #[uniffi::method]
-    fn search_receipts(&self, query_str: String) -> Vec<ReceiptSearchResult> {
+    fn search_receipts(
+        &self,
+        query_str: String,
+    ) -> Result<Vec<ReceiptSearchResult>, ReceiptIndexError> {
         let schema = self.index.schema();
-        let merchant_name_field = schema.get_field("merchant_name").unwrap();
-        let notes_field = schema.get_field("notes").unwrap();
-        let tags_field = schema.get_field("tags").unwrap();
+        let merchant_name_field = schema.get_field("merchant_name")?;
+        let notes_field = schema.get_field("notes")?;
+        let tags_field = schema.get_field("tags")?;
 
         let searcher = self.reader.searcher();
 
@@ -219,12 +297,12 @@ impl ReceiptIndex {
 
         let query = query_parser.parse_query_lenient(&query_str).0;
 
-        let top_docs = searcher.search(&query, &TopDocs::with_limit(20)).unwrap();
+        let top_docs = searcher.search(&query, &TopDocs::with_limit(20))?;
 
         let mut results: Vec<ReceiptSearchResult> = Vec::new();
 
         for (score, doc_address) in top_docs {
-            let retrieved_doc: TantivyDocument = searcher.doc(doc_address).unwrap();
+            let retrieved_doc: TantivyDocument = searcher.doc(doc_address)?;
             let receipt_item = ReceiptIndexItem::from_tantivy_doc(retrieved_doc, schema.clone());
             results.push(ReceiptSearchResult {
                 item: receipt_item,
@@ -232,15 +310,22 @@ impl ReceiptIndex {
             });
         }
 
-        results
+        Ok(results)
     }
 
     #[uniffi::method]
-    fn clear_index(&self) {
-        let mut writer = self.writer.lock().unwrap();
-        writer.delete_all_documents().unwrap();
-        writer.commit().unwrap();
-        self.reader.reload().unwrap();
+    fn clear_index(&self) -> Result<(), ReceiptIndexError> {
+        // acquire the writer lock
+        let mut writer = match self.writer.lock() {
+            Ok(wtr) => wtr,
+            Err(_) => return Err(ReceiptIndexError::WriterAcquisitionError),
+        };
+
+        writer.delete_all_documents()?;
+        writer.commit()?;
+        self.reader.reload()?;
+
+        Ok(())
     }
 }
 
