@@ -27,6 +27,11 @@ if useLocalFramework {
 
 let package = Package(
     name: "TantivySwift",
+    platforms: [
+        // currently supporting iOS 13+ and macOS 10.15+ due to actors
+        .iOS(.v13),
+        .macOS(.v10_15),
+    ],
     products: [
         // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
