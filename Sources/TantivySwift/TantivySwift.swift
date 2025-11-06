@@ -20,17 +20,6 @@ public struct TantivySwiftSearchQuery<TantivyDoc: Codable & TantivyIndexDocument
     public var lenient: Bool
 
     func toTantivySearchQuery() -> TantivySearchQuery {
-        var tantivyFuzzyFields: [TantivyFuzzyField] = []
-        for fuzzyField in fuzzyFields {
-            let tantivyFuzzyField = TantivyFuzzyField(
-                fieldName: fuzzyField.field.stringValue,
-                prefix: fuzzyField.prefix,
-                distance: fuzzyField.distance,
-                transposeCostOne: fuzzyField.transposeCostOne
-            )
-            tantivyFuzzyFields.append(tantivyFuzzyField)
-        }
-
         return TantivySearchQuery(
             queryStr: queryStr,
             defaultFields: defaultFields.map { $0.stringValue },
