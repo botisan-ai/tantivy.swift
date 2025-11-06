@@ -14,10 +14,24 @@ public enum TantivySwiftError: Error {
 
 public struct TantivySwiftSearchQuery<TantivyDoc: Codable & TantivyIndexDocument & Sendable>: Sendable {
     public var queryStr: String
-    public var defaultFields: [TantivyDoc.CodingKeys] = []
-    public var fuzzyFields: [TantivySwiftFuzzyField<TantivyDoc>] = []
-    public var topDocLimit: UInt32 = 10
-    public var lenient: Bool = false
+    public var defaultFields: [TantivyDoc.CodingKeys]
+    public var fuzzyFields: [TantivySwiftFuzzyField<TantivyDoc>]
+    public var topDocLimit: UInt32
+    public var lenient: Bool
+
+    public init(
+        queryStr: String,
+        defaultFields: [TantivyDoc.CodingKeys] = [],
+        fuzzyFields: [TantivySwiftFuzzyField<TantivyDoc>] = [],
+        topDocLimit: UInt32 = 10,
+        lenient: Bool = false
+    ) {
+        self.queryStr = queryStr
+        self.defaultFields = defaultFields
+        self.fuzzyFields = fuzzyFields
+        self.topDocLimit = topDocLimit
+        self.lenient = lenient
+    }
 
     func toTantivySearchQuery() -> TantivySearchQuery {
         return TantivySearchQuery(
@@ -35,6 +49,18 @@ public struct TantivySwiftFuzzyField<TantivyDoc: Codable & TantivyIndexDocument 
     public var prefix: Bool = false
     public var distance: UInt8 = 1
     public var transposeCostOne: Bool = false
+
+    public init(
+        field: TantivyDoc.CodingKeys,
+        prefix: Bool = false,
+        distance: UInt8 = 1,
+        transposeCostOne: Bool = false
+    ) {
+        self.field = field
+        self.prefix = prefix
+        self.distance = distance
+        self.transposeCostOne = transposeCostOne
+    }
 
     func toTantivyFuzzyField() -> TantivyFuzzyField {
         return TantivyFuzzyField(
