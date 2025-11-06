@@ -75,13 +75,13 @@ public struct TantivySwiftFuzzyField<TantivyDoc: Codable & TantivyIndexDocument 
 // search result struct
 // building this struct in Swift so it can use generics
 public struct TantivySearchResults<TantivyDoc: Codable & TantivyIndexDocument & Sendable>: Codable, Sendable {
-    let count: UInt64
-    let docs: [TantivySearchResult<TantivyDoc>]
+    public let count: UInt64
+    public let docs: [TantivySearchResult<TantivyDoc>]
 }
 
 public struct TantivySearchResult<TantivyDoc: Codable & TantivyIndexDocument & Sendable>: Codable, Sendable {
-    let score: Float
-    let doc: TantivyDoc
+    public let score: Float
+    public let doc: TantivyDoc
 }
 
 public actor TantivySwiftIndex<TantivyDoc: Codable & TantivyIndexDocument & Sendable> {
