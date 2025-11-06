@@ -7,26 +7,26 @@ struct ReceiptIndexItem: Codable, TantivyIndexDocument {
     enum CodingKeys: String, CodingKey {
         case receiptId
         case merchantName
-        case notes
         case transactionDate
         case convertedTotal
+        case notes
         case tags
     }
 
     var receiptId: String
     var merchantName: String
-    var notes: String
     var transactionDate: Date
     var convertedTotal: Double
+    var notes: String?
     var tags: [String]
 
-    init(receiptId: String, merchantName: String, notes: String, transactionDate: Date, convertedTotal: Double, tags: [String]) {
+    init(receiptId: String, merchantName: String, transactionDate: Date, convertedTotal: Double, notes: String? = nil, tags: [String]? = nil) {
         self.receiptId = receiptId
         self.merchantName = merchantName
-        self.notes = notes
         self.transactionDate = transactionDate
         self.convertedTotal = convertedTotal
-        self.tags = tags
+        self.notes = notes
+        self.tags = tags ?? []
     }
 
     init(from decoder: any Decoder) throws {
@@ -40,9 +40,7 @@ struct ReceiptIndexItem: Codable, TantivyIndexDocument {
 
         self.receiptId = receiptId
 
-        self.merchantName = try container.decode([String].self, forKey: .merchantName).first ?? ""
-
-        self.notes = try container.decode([String].self, forKey: .notes).first ?? ""
+        merchantName = try container.decode([String].self, forKey: .merchantName).first ?? ""
 
         let transactionDateField = try container.decode([String].self, forKey: .transactionDate)
 
@@ -58,22 +56,25 @@ struct ReceiptIndexItem: Codable, TantivyIndexDocument {
 
         self.transactionDate = transactionDate
 
-        self.convertedTotal = try container.decode([Double].self, forKey: .convertedTotal).first ?? 0.0
+        convertedTotal = try container.decode([Double].self, forKey: .convertedTotal).first ?? 0.0
 
-        self.tags = try container.decode([String].self, forKey: .tags)
+        notes = try container.decodeIfPresent([String].self, forKey: .notes)?.first
+
+        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
     }
 
     func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(receiptId, forKey: .receiptId)
         try container.encode(merchantName, forKey: .merchantName)
-        try container.encode(notes, forKey: .notes)
 
         // encode date as ISO8601 string
         let dateFormatter = ISO8601DateFormatter()
         try container.encode(dateFormatter.string(from: transactionDate), forKey: .transactionDate)
 
         try container.encode(convertedTotal, forKey: .convertedTotal)
+
+        try container.encodeIfPresent(notes, forKey: .notes)
         try container.encode(tags, forKey: .tags)
     }
 
@@ -107,19 +108,6 @@ struct ReceiptIndexItem: Codable, TantivyIndexDocument {
             }
           },
           {
-            "name": "notes",
-            "type": "text",
-            "options": {
-              "indexing": {
-                "record": "position",
-                "fieldnorms": true,
-                "tokenizer": "unicode"
-              },
-              "stored": true,
-              "fast": false
-            }
-          },
-          {
             "name": "transactionDate",
             "type": "date",
             "options": {
@@ -138,6 +126,19 @@ struct ReceiptIndexItem: Codable, TantivyIndexDocument {
               "fieldnorms": false,
               "fast": true,
               "stored": true
+            }
+          },
+          {
+            "name": "notes",
+            "type": "text",
+            "options": {
+              "indexing": {
+                "record": "position",
+                "fieldnorms": true,
+                "tokenizer": "unicode"
+              },
+              "stored": true,
+              "fast": false
             }
           },
           {
@@ -349,13 +350,12 @@ struct ExampleIndexDoc: Codable, TantivyIndexDocument, Sendable {
         var count = await index.count()
         assert(count == 0, "Index should be empty after clearing")
 
+        // there are optional fields here, so it is a test for serialization/deserialization as well
         let receipt = ReceiptIndexItem(
             receiptId: "r1",
             merchantName: "Starbucks Coffee",
-            notes: "Morning coffee",
             transactionDate: Date(),
-            convertedTotal: 4.50,
-            tags: ["coffee", "morning"]
+            convertedTotal: 4.50
         )
 
         try await index.index(doc: receipt)
@@ -366,5 +366,21 @@ struct ExampleIndexDoc: Codable, TantivyIndexDocument, Sendable {
         let doc = try await index.getDoc(idField: .receiptId, idValue: "r1")
         assert(doc != nil, "Document with receiptId r1 should exist")
         assert(doc?.merchantName == "Starbucks Coffee", "Retrieved document merchantName should match")
+
+        let query = TantivySwiftSearchQuery<ReceiptIndexItem>(
+            queryStr: "coffee",
+            defaultFields: [.merchantName, .notes, .tags],
+            fuzzyFields: [
+                .init(field: .merchantName, prefix: true, distance: 2),
+                .init(field: .notes, prefix: true, distance: 2),
+            ],
+            limit: 20,
+            offset: 0
+        )
+
+        let results = try await index.search(query: query)
+
+        assert(results.count == 1, "Search should return 1 document")
+        assert(results.docs.first?.doc.receiptId == "r1", "Search result should be the document with receiptId r1")
     }
 }

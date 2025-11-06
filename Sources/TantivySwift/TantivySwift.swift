@@ -129,7 +129,6 @@ public actor TantivySwiftIndex<TantivyDoc: Codable & TantivyIndexDocument & Send
 
     public func search(query: TantivySwiftSearchQuery<TantivyDoc>) throws -> TantivySearchResults<TantivyDoc> {
         let resultsJsonStr = try index.search(query: query.toTantivySearchQuery())
-        print(resultsJsonStr)
         return try JSONDecoder().decode(
             TantivySearchResults<TantivyDoc>.self, 
             from: Data(resultsJsonStr.utf8)
