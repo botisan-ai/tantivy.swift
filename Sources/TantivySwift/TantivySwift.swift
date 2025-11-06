@@ -14,10 +14,10 @@ public enum TantivySwiftError: Error {
 
 public struct TantivySwiftSearchQuery<TantivyDoc: Codable & TantivyIndexDocument & Sendable>: Sendable {
     public var queryStr: String
-    public var defaultFields: [TantivyDoc.CodingKeys]
-    public var fuzzyFields: [TantivySwiftFuzzyField<TantivyDoc>]
-    public var topDocLimit: UInt32
-    public var lenient: Bool
+    public var defaultFields: [TantivyDoc.CodingKeys] = []
+    public var fuzzyFields: [TantivySwiftFuzzyField<TantivyDoc>] = []
+    public var topDocLimit: UInt32 = 10
+    public var lenient: Bool = false
 
     func toTantivySearchQuery() -> TantivySearchQuery {
         return TantivySearchQuery(
@@ -32,9 +32,9 @@ public struct TantivySwiftSearchQuery<TantivyDoc: Codable & TantivyIndexDocument
 
 public struct TantivySwiftFuzzyField<TantivyDoc: Codable & TantivyIndexDocument & Sendable>: Sendable {
     public var field: TantivyDoc.CodingKeys
-    public var prefix: Bool
-    public var distance: UInt8
-    public var transposeCostOne: Bool
+    public var prefix: Bool = false
+    public var distance: UInt8 = 1
+    public var transposeCostOne: Bool = false
 
     func toTantivyFuzzyField() -> TantivyFuzzyField {
         return TantivyFuzzyField(
