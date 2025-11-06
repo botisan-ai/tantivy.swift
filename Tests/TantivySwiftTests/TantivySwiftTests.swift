@@ -3,6 +3,161 @@ import Testing
 @testable import TantivySwift
 import TantivyFFI
 
+struct ReceiptIndexItem: Codable, TantivyIndexDocument {
+    enum CodingKeys: String, CodingKey {
+        case receiptId
+        case merchantName
+        case notes
+        case transactionDate
+        case convertedTotal
+        case tags
+    }
+
+    var receiptId: String
+    var merchantName: String
+    var notes: String
+    var transactionDate: Date
+    var convertedTotal: Double
+    var tags: [String]
+
+    init(receiptId: String, merchantName: String, notes: String, transactionDate: Date, convertedTotal: Double, tags: [String]) {
+        self.receiptId = receiptId
+        self.merchantName = merchantName
+        self.notes = notes
+        self.transactionDate = transactionDate
+        self.convertedTotal = convertedTotal
+        self.tags = tags
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        let receiptIdField = try container.decode([String].self, forKey: .receiptId)
+
+        guard let receiptId = receiptIdField.first else {
+            throw DecodingError.dataCorruptedError(forKey: .receiptId, in: container, debugDescription: "receiptId field is empty")
+        }
+
+        self.receiptId = receiptId
+
+        self.merchantName = try container.decode([String].self, forKey: .merchantName).first ?? ""
+
+        self.notes = try container.decode([String].self, forKey: .notes).first ?? ""
+
+        let transactionDateField = try container.decode([String].self, forKey: .transactionDate)
+
+        guard let transactionDateStr = transactionDateField.first else {
+            throw DecodingError.dataCorruptedError(forKey: .transactionDate, in: container, debugDescription: "transactionDate field is empty")
+        }
+
+        let dateFormatter = ISO8601DateFormatter()
+
+        guard let transactionDate = dateFormatter.date(from: transactionDateStr) else {
+            throw DecodingError.dataCorruptedError(forKey: .transactionDate, in: container, debugDescription: "Invalid date format for transactionDate")
+        }
+
+        self.transactionDate = transactionDate
+
+        self.convertedTotal = try container.decode([Double].self, forKey: .convertedTotal).first ?? 0.0
+
+        self.tags = try container.decode([String].self, forKey: .tags)
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(receiptId, forKey: .receiptId)
+        try container.encode(merchantName, forKey: .merchantName)
+        try container.encode(notes, forKey: .notes)
+
+        // encode date as ISO8601 string
+        let dateFormatter = ISO8601DateFormatter()
+        try container.encode(dateFormatter.string(from: transactionDate), forKey: .transactionDate)
+
+        try container.encode(convertedTotal, forKey: .convertedTotal)
+        try container.encode(tags, forKey: .tags)
+    }
+
+    static func schemaJsonStr() -> String {
+        return """
+        [
+          {
+            "name": "receiptId",
+            "type": "text",
+            "options": {
+              "indexing": {
+                "record": "basic",
+                "fieldnorms": true,
+                "tokenizer": "raw"
+              },
+              "stored": true,
+              "fast": false
+            }
+          },
+          {
+            "name": "merchantName",
+            "type": "text",
+            "options": {
+              "indexing": {
+                "record": "position",
+                "fieldnorms": true,
+                "tokenizer": "unicode"
+              },
+              "stored": true,
+              "fast": false
+            }
+          },
+          {
+            "name": "notes",
+            "type": "text",
+            "options": {
+              "indexing": {
+                "record": "position",
+                "fieldnorms": true,
+                "tokenizer": "unicode"
+              },
+              "stored": true,
+              "fast": false
+            }
+          },
+          {
+            "name": "transactionDate",
+            "type": "date",
+            "options": {
+              "indexed": true,
+              "fieldnorms": true,
+              "fast": false,
+              "stored": true,
+              "precision": "seconds"
+            }
+          },
+          {
+            "name": "convertedTotal",
+            "type": "f64",
+            "options": {
+              "indexed": false,
+              "fieldnorms": false,
+              "fast": true,
+              "stored": true
+            }
+          },
+          {
+            "name": "tags",
+            "type": "text",
+            "options": {
+              "indexing": {
+                "record": "basic",
+                "fieldnorms": true,
+                "tokenizer": "raw"
+              },
+              "stored": true,
+              "fast": false
+            }
+          }
+        ]
+        """
+    }
+}
+
 struct ExampleIndexDoc: Codable, TantivyIndexDocument, Sendable {
     // custom coding keys
     enum CodingKeys: String, CodingKey {
@@ -96,20 +251,20 @@ struct ExampleIndexDoc: Codable, TantivyIndexDocument, Sendable {
 @Suite(.serialized) struct TantivySwiftIndexTests {
     @Test func cleanup() throws {
         let fileManager = FileManager.default
-        let indexPath = "./example_index"
+        let indexPath = "./test_data/example_index"
         if fileManager.fileExists(atPath: indexPath) {
             try fileManager.removeItem(atPath: indexPath)
         }
     }
 
     @Test func createIndex() async throws {
-        let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./example_index")
+        let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./test_data/example_index")
         let count = await index.count()
         assert(count == 0, "Index should be empty initially")
     }
 
     @Test func indexAndCountDocuments() async throws {
-        let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./example_index")
+        let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./test_data/example_index")
 
         try await index.clear()
         var count = await index.count()
@@ -126,7 +281,7 @@ struct ExampleIndexDoc: Codable, TantivyIndexDocument, Sendable {
     }
 
     @Test func indexMultipleDocuments() async throws {
-        let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./example_index")
+        let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./test_data/example_index")
 
         try await index.clear()
         var count = await index.count()
@@ -145,7 +300,7 @@ struct ExampleIndexDoc: Codable, TantivyIndexDocument, Sendable {
     }
 
     @Test func retrieveDocument() async throws {
-        let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./example_index")
+        let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./test_data/example_index")
 
         let docIdToRetrieve = "3"
         let doc = try await index.getDoc(idField: "docId", idValue: docIdToRetrieve)
@@ -155,7 +310,7 @@ struct ExampleIndexDoc: Codable, TantivyIndexDocument, Sendable {
     }
 
     @Test func deleteDocument() async throws {
-        let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./example_index")
+        let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./test_data/example_index")
 
         let docIdToDelete = "4"
         try await index.deleteDoc(idField: "docId", idValue: docIdToDelete)
@@ -171,7 +326,7 @@ struct ExampleIndexDoc: Codable, TantivyIndexDocument, Sendable {
     }
 
     @Test func searchDocuments() async throws {
-        let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./example_index")
+        let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./test_data/example_index")
 
         let query = TantivySearchQuery(
             queryStr: "fifth",
@@ -190,5 +345,31 @@ struct ExampleIndexDoc: Codable, TantivyIndexDocument, Sendable {
 
         assert(results.count == 1, "Search should return 1 document")
         assert(results.docs.first?.doc.docId == "5", "Search result should be the document with docId 5")
+    }
+
+    @Test func complexIndex() async throws {
+        let index = try TantivySwiftIndex<ReceiptIndexItem>(path: "./test_data/receipt_index")
+
+        try await index.clear()
+        var count = await index.count()
+        assert(count == 0, "Index should be empty after clearing")
+
+        let receipt = ReceiptIndexItem(
+            receiptId: "r1",
+            merchantName: "Starbucks Coffee",
+            notes: "Morning coffee",
+            transactionDate: Date(),
+            convertedTotal: 4.50,
+            tags: ["coffee", "morning"]
+        )
+
+        try await index.index(doc: receipt)
+
+        count = await index.count()
+        assert(count == 1, "Index should contain 1 document after indexing a receipt")
+
+        let doc = try await index.getDoc(idField: "receiptId", idValue: "r1")
+        assert(doc != nil, "Document with receiptId r1 should exist")
+        assert(doc?.merchantName == "Starbucks Coffee", "Retrieved document merchantName should match")
     }
 }
