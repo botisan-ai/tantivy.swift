@@ -2,7 +2,22 @@
 
 This project provides a way to use [Tantivy](https://github.com/quickwit-oss/tantivy), a full-text search engine library written in Rust, in iOS applications. It uses [UniFFI](https://github.com/mozilla/uniffi-rs) to generate Swift bindings.
 
-## How to Build
+## Features
+
+- Create and manage Tantivy indexes, which saves on disk
+- safe concurrency with Swift `actor`
+- Documents as Codables
+- Search results with scores
+- Custom Unicode-aware tokenizer by default (works for all languages without configuration)
+
+## Future Plans
+
+- [ ] Schema definition in Swift instead of JSON string
+- [ ] More search feature support (facets, filters, aggregations) from Tantivy
+
+## Development
+
+### How to Build
 
 - add iOS targets for rust:
 
@@ -54,6 +69,6 @@ xcodebuild -create-xcframework \
 - Should be able to reference the Rust code from Swift now.
 
 
-## Custom Tokenizer that is Unicode aware (works for all languages)
+### Custom Tokenizer that is Unicode aware (works for all languages)
 
 - Using https://github.com/unicode-rs/unicode-segmentation because it is more portable.
