@@ -2,28 +2,28 @@ import Foundation
 import TantivyFFI
 
 // protocol that indexable documents must conform to
-protocol TantivyIndexDocument {
-  static func schemaJsonStr() -> String
+public protocol TantivyIndexDocument {
+    static func schemaJsonStr() -> String
 }
 
 // error type
-enum TantivySwiftError: Error {
+public enum TantivySwiftError: Error {
     case documentNotFound
 }
 
 // search result struct
 // building this struct in Swift so it can use generics
-struct TantivySearchResults<TantivyDoc: Codable & TantivyIndexDocument & Sendable>: Codable, Sendable {
+public struct TantivySearchResults<TantivyDoc: Codable & TantivyIndexDocument & Sendable>: Codable, Sendable {
     let count: UInt64
     let docs: [TantivySearchResult<TantivyDoc>]
 }
 
-struct TantivySearchResult<TantivyDoc: Codable & TantivyIndexDocument & Sendable>: Codable, Sendable {
+public struct TantivySearchResult<TantivyDoc: Codable & TantivyIndexDocument & Sendable>: Codable, Sendable {
     let score: Float
     let doc: TantivyDoc
 }
 
-actor TantivySwiftIndex<TantivyDoc: Codable & TantivyIndexDocument & Sendable> {
+public actor TantivySwiftIndex<TantivyDoc: Codable & TantivyIndexDocument & Sendable> {
     let index: TantivyIndex
 
     init(path: String) throws {
