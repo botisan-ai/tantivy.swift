@@ -334,9 +334,7 @@ struct ExampleIndexDoc: Codable, TantivyIndexDocument, Sendable {
             fuzzyFields: [
                 TantivySwiftFuzzyField(field: .title, prefix: true, distance: 2, transposeCostOne: false),
                 TantivySwiftFuzzyField(field: .body, prefix: true, distance: 2, transposeCostOne: false),
-            ],
-            topDocLimit: 10,
-            lenient: true
+            ]
         )
         let results = try await index.search(query: query)
 

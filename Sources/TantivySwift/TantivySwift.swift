@@ -16,21 +16,21 @@ public struct TantivySwiftSearchQuery<TantivyDoc: Codable & TantivyIndexDocument
     public var queryStr: String
     public var defaultFields: [TantivyDoc.CodingKeys]
     public var fuzzyFields: [TantivySwiftFuzzyField<TantivyDoc>]
-    public var topDocLimit: UInt32
-    public var lenient: Bool
+    public var limit: UInt32
+    public var offset: UInt32
 
     public init(
         queryStr: String,
         defaultFields: [TantivyDoc.CodingKeys] = [],
         fuzzyFields: [TantivySwiftFuzzyField<TantivyDoc>] = [],
-        topDocLimit: UInt32 = 10,
-        lenient: Bool = false
+        limit: UInt32 = 10,
+        offset: UInt32 = 0
     ) {
         self.queryStr = queryStr
         self.defaultFields = defaultFields
         self.fuzzyFields = fuzzyFields
-        self.topDocLimit = topDocLimit
-        self.lenient = lenient
+        self.limit = limit
+        self.offset = offset
     }
 
     func toTantivySearchQuery() -> TantivySearchQuery {
@@ -38,8 +38,8 @@ public struct TantivySwiftSearchQuery<TantivyDoc: Codable & TantivyIndexDocument
             queryStr: queryStr,
             defaultFields: defaultFields.map { $0.stringValue },
             fuzzyFields: fuzzyFields.map { $0.toTantivyFuzzyField() },
-            topDocLimit: topDocLimit,
-            lenient: lenient
+            topDocLimit: limit,
+            topDocOffset: offset
         )
     }
 }

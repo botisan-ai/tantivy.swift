@@ -35,6 +35,8 @@ pub enum TantivyIndexError {
     SerializationError(#[from] serde_json::Error),
     #[error("Document parsing error: {0}")]
     DocParsingError(#[from] tantivy::schema::document::DocParsingError),
+    #[error("TryFromInt error: {0}")]
+    TryFromIntError(#[from] std::num::TryFromIntError),
     #[error("Index writer acquisition error")]
     WriterAcquisitionError,
     #[error("Document not found for: {0}")]
@@ -47,7 +49,7 @@ pub struct TantivySearchQuery {
     pub default_fields: Vec<String>,
     pub fuzzy_fields: Vec<TantivyFuzzyField>,
     pub top_doc_limit: u32,
-    pub lenient: bool,
+    pub top_doc_offset: u32,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -275,9 +277,16 @@ impl TantivyIndex {
             );
         }
 
-        let query = query_parser.parse_query_lenient(&query_str).0;
+        // TODO: return the errors back
+        let parsed_query = query_parser.parse_query_lenient(&query_str).0;
 
-        let (doc_count, top_docs) = searcher.search(&query, &(Count, TopDocs::with_limit(20)))?;
+        let limit: usize = query.top_doc_limit.try_into()?;
+        let offset: usize = query.top_doc_offset.try_into()?;
+
+        let (doc_count, top_docs) = searcher.search(
+            &parsed_query,
+            &(Count, TopDocs::with_limit(limit).and_offset(offset)),
+        )?;
 
         let mut top_doc_items: Vec<TopDoc> = Vec::new();
 

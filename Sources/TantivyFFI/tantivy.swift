@@ -790,16 +790,16 @@ public struct TantivySearchQuery: Equatable, Hashable {
     public var defaultFields: [String]
     public var fuzzyFields: [TantivyFuzzyField]
     public var topDocLimit: UInt32
-    public var lenient: Bool
+    public var topDocOffset: UInt32
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(queryStr: String, defaultFields: [String], fuzzyFields: [TantivyFuzzyField], topDocLimit: UInt32, lenient: Bool) {
+    public init(queryStr: String, defaultFields: [String], fuzzyFields: [TantivyFuzzyField], topDocLimit: UInt32, topDocOffset: UInt32) {
         self.queryStr = queryStr
         self.defaultFields = defaultFields
         self.fuzzyFields = fuzzyFields
         self.topDocLimit = topDocLimit
-        self.lenient = lenient
+        self.topDocOffset = topDocOffset
     }
 
     
@@ -820,7 +820,7 @@ public struct FfiConverterTypeTantivySearchQuery: FfiConverterRustBuffer {
                 defaultFields: FfiConverterSequenceString.read(from: &buf), 
                 fuzzyFields: FfiConverterSequenceTypeTantivyFuzzyField.read(from: &buf), 
                 topDocLimit: FfiConverterUInt32.read(from: &buf), 
-                lenient: FfiConverterBool.read(from: &buf)
+                topDocOffset: FfiConverterUInt32.read(from: &buf)
         )
     }
 
@@ -829,7 +829,7 @@ public struct FfiConverterTypeTantivySearchQuery: FfiConverterRustBuffer {
         FfiConverterSequenceString.write(value.defaultFields, into: &buf)
         FfiConverterSequenceTypeTantivyFuzzyField.write(value.fuzzyFields, into: &buf)
         FfiConverterUInt32.write(value.topDocLimit, into: &buf)
-        FfiConverterBool.write(value.lenient, into: &buf)
+        FfiConverterUInt32.write(value.topDocOffset, into: &buf)
     }
 }
 
@@ -862,6 +862,8 @@ public enum TantivyIndexError: Swift.Error, Equatable, Hashable, Foundation.Loca
     case SerializationError(message: String)
     
     case DocParsingError(message: String)
+    
+    case TryFromIntError(message: String)
     
     case WriterAcquisitionError(message: String)
     
@@ -914,11 +916,15 @@ public struct FfiConverterTypeTantivyIndexError: FfiConverterRustBuffer {
             message: try FfiConverterString.read(from: &buf)
         )
         
-        case 6: return .WriterAcquisitionError(
+        case 6: return .TryFromIntError(
             message: try FfiConverterString.read(from: &buf)
         )
         
-        case 7: return .DocRetrievalError(
+        case 7: return .WriterAcquisitionError(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 8: return .DocRetrievalError(
             message: try FfiConverterString.read(from: &buf)
         )
         
@@ -943,10 +949,12 @@ public struct FfiConverterTypeTantivyIndexError: FfiConverterRustBuffer {
             writeInt(&buf, Int32(4))
         case .DocParsingError(_ /* message is ignored*/):
             writeInt(&buf, Int32(5))
-        case .WriterAcquisitionError(_ /* message is ignored*/):
+        case .TryFromIntError(_ /* message is ignored*/):
             writeInt(&buf, Int32(6))
-        case .DocRetrievalError(_ /* message is ignored*/):
+        case .WriterAcquisitionError(_ /* message is ignored*/):
             writeInt(&buf, Int32(7))
+        case .DocRetrievalError(_ /* message is ignored*/):
+            writeInt(&buf, Int32(8))
 
         
         }

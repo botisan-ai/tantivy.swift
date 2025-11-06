@@ -15,8 +15,8 @@ if useLocalFramework {
         path: "./build/libtantivy-rs.xcframework"
     )
 } else {
-    let releaseTag = "0.1.0"
-    let releaseChecksum = "16fc0b5e5696288d4b8a4a0a570b9a4385ae218831420ae1979975bbe8df1dec"
+    let releaseTag = "0.1.3"
+    let releaseChecksum = "ba24c904e07152dc9d1bc42a1662764cbb25a6fb2c60594ed5be0f39dc4b524f"
     binaryTarget = .binaryTarget(
         name: "TantivyRS",
         url:
