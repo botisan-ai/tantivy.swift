@@ -3,7 +3,8 @@
 
 import PackageDescription
 
-let useLocalFramework = true
+// change this to true for local package development
+let useLocalFramework = false
 let binaryTarget: Target
 
 if useLocalFramework {
