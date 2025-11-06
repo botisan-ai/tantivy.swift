@@ -303,7 +303,7 @@ struct ExampleIndexDoc: Codable, TantivyIndexDocument, Sendable {
         let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./test_data/example_index")
 
         let docIdToRetrieve = "3"
-        let doc = try await index.getDoc(idField: "docId", idValue: docIdToRetrieve)
+        let doc = try await index.getDoc(idField: .docId, idValue: docIdToRetrieve)
 
         assert(doc != nil, "Document with docId \(docIdToRetrieve) should exist")
         assert(doc?.title == "Third Document", "Retrieved document title should match")
@@ -313,10 +313,10 @@ struct ExampleIndexDoc: Codable, TantivyIndexDocument, Sendable {
         let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./test_data/example_index")
 
         let docIdToDelete = "4"
-        try await index.deleteDoc(idField: "docId", idValue: docIdToDelete)
+        try await index.deleteDoc(idField: .docId, idValue: docIdToDelete)
 
         // we keep the error behavior and use try? to return nil if not found
-        let doc = try? await index.getDoc(idField: "docId", idValue: docIdToDelete)
+        let doc = try? await index.getDoc(idField: .docId, idValue: docIdToDelete)
 
         assert(doc == nil, "Document with docId \(docIdToDelete) should have been deleted")
 
@@ -328,15 +328,12 @@ struct ExampleIndexDoc: Codable, TantivyIndexDocument, Sendable {
     @Test func searchDocuments() async throws {
         let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./test_data/example_index")
 
-        let query = TantivySearchQuery(
+        let query = TantivySwiftSearchQuery<ExampleIndexDoc>(
             queryStr: "fifth",
-            defaultFields: [
-                "title",
-                "body"
-            ],
+            defaultFields: [.title, .body],
             fuzzyFields: [
-                TantivyFuzzyField(fieldName: "title", prefix: true, distance: 2, transposeCostOne: false),
-                TantivyFuzzyField(fieldName: "body", prefix: true, distance: 2, transposeCostOne: false),
+                TantivySwiftFuzzyField(field: .title, prefix: true, distance: 2, transposeCostOne: false),
+                TantivySwiftFuzzyField(field: .body, prefix: true, distance: 2, transposeCostOne: false),
             ],
             topDocLimit: 10,
             lenient: true
@@ -368,7 +365,7 @@ struct ExampleIndexDoc: Codable, TantivyIndexDocument, Sendable {
         count = await index.count()
         assert(count == 1, "Index should contain 1 document after indexing a receipt")
 
-        let doc = try await index.getDoc(idField: "receiptId", idValue: "r1")
+        let doc = try await index.getDoc(idField: .receiptId, idValue: "r1")
         assert(doc != nil, "Document with receiptId r1 should exist")
         assert(doc?.merchantName == "Starbucks Coffee", "Retrieved document merchantName should match")
     }

@@ -3,12 +3,58 @@ import TantivyFFI
 
 // protocol that indexable documents must conform to
 public protocol TantivyIndexDocument {
+    associatedtype CodingKeys: CodingKey
     static func schemaJsonStr() -> String
 }
 
 // error type
 public enum TantivySwiftError: Error {
     case documentNotFound
+}
+
+public struct TantivySwiftSearchQuery<TantivyDoc: Codable & TantivyIndexDocument & Sendable>: Sendable {
+    public var queryStr: String
+    public var defaultFields: [TantivyDoc.CodingKeys]
+    public var fuzzyFields: [TantivySwiftFuzzyField<TantivyDoc>]
+    public var topDocLimit: UInt32
+    public var lenient: Bool
+
+    func toTantivySearchQuery() -> TantivySearchQuery {
+        var tantivyFuzzyFields: [TantivyFuzzyField] = []
+        for fuzzyField in fuzzyFields {
+            let tantivyFuzzyField = TantivyFuzzyField(
+                fieldName: fuzzyField.field.stringValue,
+                prefix: fuzzyField.prefix,
+                distance: fuzzyField.distance,
+                transposeCostOne: fuzzyField.transposeCostOne
+            )
+            tantivyFuzzyFields.append(tantivyFuzzyField)
+        }
+
+        return TantivySearchQuery(
+            queryStr: queryStr,
+            defaultFields: defaultFields.map { $0.stringValue },
+            fuzzyFields: fuzzyFields.map { $0.toTantivyFuzzyField() },
+            topDocLimit: topDocLimit,
+            lenient: lenient
+        )
+    }
+}
+
+public struct TantivySwiftFuzzyField<TantivyDoc: Codable & TantivyIndexDocument & Sendable>: Sendable {
+    public var field: TantivyDoc.CodingKeys
+    public var prefix: Bool
+    public var distance: UInt8
+    public var transposeCostOne: Bool
+
+    func toTantivyFuzzyField() -> TantivyFuzzyField {
+        return TantivyFuzzyField(
+            fieldName: field.stringValue,
+            prefix: prefix,
+            distance: distance,
+            transposeCostOne: transposeCostOne
+        )
+    }
 }
 
 // search result struct
@@ -52,22 +98,22 @@ public actor TantivySwiftIndex<TantivyDoc: Codable & TantivyIndexDocument & Send
       }
     }
 
-    public func deleteDoc(idField: String, idValue: String) throws {
-        try index.deleteDoc(idField: idField, idValue: idValue)
-    }
-
     // TODO: make these methods more Swifty by taking the id field and value as parameters
-    public func docExists(idField: String, idValue: String) throws -> Bool {
-        return try index.docExists(idField: idField, idValue: idValue)
+    public func deleteDoc(idField: TantivyDoc.CodingKeys, idValue: String) throws {
+        try index.deleteDoc(idField: idField.stringValue, idValue: idValue)
     }
 
-    public func getDoc(idField: String, idValue: String) throws -> TantivyDoc? {
-        let jsonStr = try index.getDoc(idField: idField, idValue: idValue)
+    public func docExists(idField: TantivyDoc.CodingKeys, idValue: String) throws -> Bool {
+        return try index.docExists(idField: idField.stringValue, idValue: idValue)
+    }
+
+    public func getDoc(idField: TantivyDoc.CodingKeys, idValue: String) throws -> TantivyDoc? {
+        let jsonStr = try index.getDoc(idField: idField.stringValue, idValue: idValue)
         return try JSONDecoder().decode(TantivyDoc.self, from: Data(jsonStr.utf8))
     }
 
-    public func search(query: TantivySearchQuery) throws -> TantivySearchResults<TantivyDoc> {
-        let resultsJsonStr = try index.search(query: query)
+    public func search(query: TantivySwiftSearchQuery<TantivyDoc>) throws -> TantivySearchResults<TantivyDoc> {
+        let resultsJsonStr = try index.search(query: query.toTantivySearchQuery())
         return try JSONDecoder().decode(
             TantivySearchResults<TantivyDoc>.self, 
             from: Data(resultsJsonStr.utf8)
