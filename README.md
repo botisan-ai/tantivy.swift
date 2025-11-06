@@ -20,6 +20,7 @@ This project provides a way to use [Tantivy](https://github.com/quickwit-oss/tan
 - There should be ways to expose Tantivy more natively to Swift, and with UniFFI, we can even define document structures in Rust and the generated Swift Code works. However, currently I don't think I can make the perfect wrapper in Swift due to my (lack of) expertise in Swift and/or Rust. So most of the communication between Swift and Rust is done via JSON strings, and there is extra overhead on both Swift and Rust sides to serialize/deserialize the data structures.
 - There is naming convention difference between Swift and Rust, so it is preferred to use camelCase for field names in Tantivy documents when defining the schema, so that the mapping between Swift Codable structs and Tantivy documents is more natural.
 - `Identifiable` protocol is not used for documents yet, because Tantivy does not have a dedicated doc ID field concept (only `DocAddress` which is not exposed). Methods are provided to retrive documents by custom ID fields. We may consider enforcing `Identifiable` protocol in documents in the future.
+- By default, a custom Unicode-aware tokenizer is configured into the index, which works for all languages without configuration. While it doesn't have specific language features like Chinese words splitting etc, but it works well enough in vast majority of cases. The goal is to make full-text search work out-of-the-box without extra configuration. We will continue to fine-tune the tokenizer to make it more versatile.
 
 ## How to Use
 
