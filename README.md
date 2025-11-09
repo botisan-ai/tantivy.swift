@@ -2,7 +2,7 @@
 
 This project provides a way to use [Tantivy](https://github.com/quickwit-oss/tantivy), a full-text search engine library written in Rust, in iOS applications. It uses [UniFFI](https://github.com/mozilla/uniffi-rs) to generate Swift bindings.
 
-![demo video](https://assets.botisan.ai/videos/ScreenRecording_11-05-2025%2020-42-43_1.MP4)
+[demo video](https://assets.botisan.ai/videos/ScreenRecording_11-05-2025%2020-42-43_1.MP4)
 
 ## Features
 
