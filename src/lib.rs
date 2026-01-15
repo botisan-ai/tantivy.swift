@@ -9,11 +9,13 @@ use tantivy::Term;
 use tantivy::collector::Count;
 use tantivy::collector::TopDocs;
 use tantivy::directory::MmapDirectory;
-use tantivy::doc;
 use tantivy::query::QueryParser;
-use tantivy::query::TermQuery;
-use tantivy::schema::IndexRecordOption;
-use tantivy::schema::Schema;
+
+use tantivy::schema::{
+    DateOptions as TantivyDateOptions, DateTimePrecision, IndexRecordOption,
+    NumericOptions as TantivyNumericOptions, Schema, TextFieldIndexing,
+    TextOptions as TantivyTextOptions,
+};
 use tantivy::tokenizer::AsciiFoldingFilter;
 use tantivy::tokenizer::LowerCaser;
 use tantivy::tokenizer::TextAnalyzer;
@@ -41,6 +43,308 @@ pub enum TantivyIndexError {
     WriterAcquisitionError,
     #[error("Document not found for: {0}")]
     DocRetrievalError(String),
+    #[error("Schema builder error: {0}")]
+    SchemaBuilderError(String),
+}
+
+#[derive(Debug, Clone, Copy, uniffi::Enum)]
+pub enum TantivyTokenizer {
+    Raw,
+    Default,
+    Unicode,
+    EnStem,
+    Whitespace,
+}
+
+impl TantivyTokenizer {
+    fn as_str(&self) -> &'static str {
+        match self {
+            TantivyTokenizer::Raw => "raw",
+            TantivyTokenizer::Default => "default",
+            TantivyTokenizer::Unicode => "unicode",
+            TantivyTokenizer::EnStem => "en_stem",
+            TantivyTokenizer::Whitespace => "whitespace",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, uniffi::Enum)]
+pub enum TantivyIndexRecordOption {
+    Basic,
+    WithFreqs,
+    WithFreqsAndPositions,
+}
+
+impl From<TantivyIndexRecordOption> for IndexRecordOption {
+    fn from(opt: TantivyIndexRecordOption) -> Self {
+        match opt {
+            TantivyIndexRecordOption::Basic => IndexRecordOption::Basic,
+            TantivyIndexRecordOption::WithFreqs => IndexRecordOption::WithFreqs,
+            TantivyIndexRecordOption::WithFreqsAndPositions => {
+                IndexRecordOption::WithFreqsAndPositions
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, uniffi::Enum)]
+pub enum TantivyDatePrecision {
+    Seconds,
+    Milliseconds,
+    Microseconds,
+}
+
+impl From<TantivyDatePrecision> for DateTimePrecision {
+    fn from(precision: TantivyDatePrecision) -> Self {
+        match precision {
+            TantivyDatePrecision::Seconds => DateTimePrecision::Seconds,
+            TantivyDatePrecision::Milliseconds => DateTimePrecision::Milliseconds,
+            TantivyDatePrecision::Microseconds => DateTimePrecision::Microseconds,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct TextFieldOptions {
+    pub tokenizer: TantivyTokenizer,
+    pub record: TantivyIndexRecordOption,
+    pub stored: bool,
+    pub fast: bool,
+    pub fieldnorms: bool,
+}
+
+impl Default for TextFieldOptions {
+    fn default() -> Self {
+        Self {
+            tokenizer: TantivyTokenizer::Unicode,
+            record: TantivyIndexRecordOption::WithFreqsAndPositions,
+            stored: true,
+            fast: false,
+            fieldnorms: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct NumericFieldOptions {
+    pub indexed: bool,
+    pub stored: bool,
+    pub fast: bool,
+    pub fieldnorms: bool,
+}
+
+impl Default for NumericFieldOptions {
+    fn default() -> Self {
+        Self {
+            indexed: true,
+            stored: true,
+            fast: false,
+            fieldnorms: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct DateFieldOptions {
+    pub indexed: bool,
+    pub stored: bool,
+    pub fast: bool,
+    pub fieldnorms: bool,
+    pub precision: TantivyDatePrecision,
+}
+
+impl Default for DateFieldOptions {
+    fn default() -> Self {
+        Self {
+            indexed: true,
+            stored: true,
+            fast: false,
+            fieldnorms: true,
+            precision: TantivyDatePrecision::Seconds,
+        }
+    }
+}
+
+#[derive(uniffi::Object)]
+pub struct TantivySchemaBuilder {
+    builder: Mutex<Option<tantivy::schema::SchemaBuilder>>,
+}
+
+#[uniffi::export]
+impl TantivySchemaBuilder {
+    #[uniffi::constructor]
+    pub fn new() -> Self {
+        Self {
+            builder: Mutex::new(Some(Schema::builder())),
+        }
+    }
+
+    #[uniffi::method]
+    pub fn add_text_field(&self, name: String, options: TextFieldOptions) {
+        let mut guard = self.builder.lock().unwrap();
+        if let Some(builder) = guard.as_mut() {
+            let mut text_options = TantivyTextOptions::default();
+
+            let indexing = TextFieldIndexing::default()
+                .set_tokenizer(options.tokenizer.as_str())
+                .set_index_option(options.record.into())
+                .set_fieldnorms(options.fieldnorms);
+
+            text_options = text_options.set_indexing_options(indexing);
+
+            if options.stored {
+                text_options = text_options.set_stored();
+            }
+            if options.fast {
+                text_options = text_options.set_fast(None);
+            }
+
+            builder.add_text_field(&name, text_options);
+        }
+    }
+
+    #[uniffi::method]
+    pub fn add_u64_field(&self, name: String, options: NumericFieldOptions) {
+        let mut guard = self.builder.lock().unwrap();
+        if let Some(builder) = guard.as_mut() {
+            let mut opts = TantivyNumericOptions::default();
+
+            if options.indexed {
+                opts = opts.set_indexed();
+            }
+            if options.stored {
+                opts = opts.set_stored();
+            }
+            if options.fast {
+                opts = opts.set_fast();
+            }
+            if options.fieldnorms {
+                opts = opts.set_fieldnorm();
+            }
+
+            builder.add_u64_field(&name, opts);
+        }
+    }
+
+    #[uniffi::method]
+    pub fn add_i64_field(&self, name: String, options: NumericFieldOptions) {
+        let mut guard = self.builder.lock().unwrap();
+        if let Some(builder) = guard.as_mut() {
+            let mut opts = TantivyNumericOptions::default();
+
+            if options.indexed {
+                opts = opts.set_indexed();
+            }
+            if options.stored {
+                opts = opts.set_stored();
+            }
+            if options.fast {
+                opts = opts.set_fast();
+            }
+            if options.fieldnorms {
+                opts = opts.set_fieldnorm();
+            }
+
+            builder.add_i64_field(&name, opts);
+        }
+    }
+
+    #[uniffi::method]
+    pub fn add_f64_field(&self, name: String, options: NumericFieldOptions) {
+        let mut guard = self.builder.lock().unwrap();
+        if let Some(builder) = guard.as_mut() {
+            let mut opts = TantivyNumericOptions::default();
+
+            if options.indexed {
+                opts = opts.set_indexed();
+            }
+            if options.stored {
+                opts = opts.set_stored();
+            }
+            if options.fast {
+                opts = opts.set_fast();
+            }
+            if options.fieldnorms {
+                opts = opts.set_fieldnorm();
+            }
+
+            builder.add_f64_field(&name, opts);
+        }
+    }
+
+    #[uniffi::method]
+    pub fn add_date_field(&self, name: String, options: DateFieldOptions) {
+        let mut guard = self.builder.lock().unwrap();
+        if let Some(builder) = guard.as_mut() {
+            let mut opts = TantivyDateOptions::default();
+
+            if options.indexed {
+                opts = opts.set_indexed();
+            }
+            if options.stored {
+                opts = opts.set_stored();
+            }
+            if options.fast {
+                opts = opts.set_fast();
+            }
+            if options.fieldnorms {
+                opts = opts.set_fieldnorm();
+            }
+            opts = opts.set_precision(options.precision.into());
+
+            builder.add_date_field(&name, opts);
+        }
+    }
+
+    #[uniffi::method]
+    pub fn add_bool_field(&self, name: String, options: NumericFieldOptions) {
+        let mut guard = self.builder.lock().unwrap();
+        if let Some(builder) = guard.as_mut() {
+            let mut opts = TantivyNumericOptions::default();
+
+            if options.indexed {
+                opts = opts.set_indexed();
+            }
+            if options.stored {
+                opts = opts.set_stored();
+            }
+            if options.fast {
+                opts = opts.set_fast();
+            }
+            if options.fieldnorms {
+                opts = opts.set_fieldnorm();
+            }
+
+            builder.add_bool_field(&name, opts);
+        }
+    }
+
+    #[uniffi::method]
+    pub fn add_bytes_field(&self, name: String, stored: bool, fast: bool, indexed: bool) {
+        let mut guard = self.builder.lock().unwrap();
+        if let Some(builder) = guard.as_mut() {
+            let mut opts = tantivy::schema::BytesOptions::default();
+
+            if stored {
+                opts = opts.set_stored();
+            }
+            if fast {
+                opts = opts.set_fast();
+            }
+            if indexed {
+                opts = opts.set_indexed();
+            }
+
+            builder.add_bytes_field(&name, opts);
+        }
+    }
+}
+
+impl TantivySchemaBuilder {
+    fn take_and_build(&self) -> Option<Schema> {
+        let mut guard = self.builder.lock().unwrap();
+        guard.take().map(|b| b.build())
+    }
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -96,18 +400,13 @@ impl TantivyIndex {
             },
         };
 
-        // create schema
         let schema: Schema = serde_json::from_str(&schema_json_str)?;
-
-        // this bit is commented out because it is being deserialized from JSON now
-        // keeping this as notes
 
         let index = match Index::open_or_create(directory, schema) {
             Ok(idx) => idx,
             Err(e) => return Err(TantivyIndexError::TantivyError(e)),
         };
 
-        // set up default tokenizers
         let tokenizer = TextAnalyzer::builder(UnicodeTokenizer::default())
             .filter(LowerCaser)
             .filter(AsciiFoldingFilter)
@@ -115,11 +414,50 @@ impl TantivyIndex {
 
         index.tokenizers().register("unicode", tokenizer);
 
-        let writer = index.writer(
-            // 100 MB heap size
-            100_000_000,
-        )?;
+        let writer = index.writer(100_000_000)?;
+        let reader = index.reader()?;
 
+        Ok(TantivyIndex {
+            index,
+            writer: Mutex::new(writer),
+            reader,
+        })
+    }
+
+    #[uniffi::constructor]
+    pub fn new_with_schema(
+        path: String,
+        schema_builder: &TantivySchemaBuilder,
+    ) -> Result<Self, TantivyIndexError> {
+        let index_path = Path::new(&path);
+
+        let directory = match MmapDirectory::open(index_path) {
+            Ok(dir) => dir,
+            Err(_) => match std::fs::create_dir_all(index_path) {
+                Ok(_) => match MmapDirectory::open(index_path) {
+                    Ok(dir) => dir,
+                    Err(e) => return Err(TantivyIndexError::OpenDirectoryError(e)),
+                },
+                Err(e) => return Err(TantivyIndexError::IoError(e)),
+            },
+        };
+
+        let schema = schema_builder.take_and_build()
+            .ok_or_else(|| TantivyIndexError::SchemaBuilderError("Schema already built or empty".to_string()))?;
+
+        let index = match Index::open_or_create(directory, schema) {
+            Ok(idx) => idx,
+            Err(e) => return Err(TantivyIndexError::TantivyError(e)),
+        };
+
+        let tokenizer = TextAnalyzer::builder(UnicodeTokenizer::default())
+            .filter(LowerCaser)
+            .filter(AsciiFoldingFilter)
+            .build();
+
+        index.tokenizers().register("unicode", tokenizer);
+
+        let writer = index.writer(100_000_000)?;
         let reader = index.reader()?;
 
         Ok(TantivyIndex {
@@ -131,7 +469,6 @@ impl TantivyIndex {
 
     #[uniffi::method]
     fn clear_index(&self) -> Result<(), TantivyIndexError> {
-        // acquire the writer lock
         let mut writer = match self.writer.lock() {
             Ok(wtr) => wtr,
             Err(_) => return Err(TantivyIndexError::WriterAcquisitionError),
@@ -147,10 +484,8 @@ impl TantivyIndex {
     #[uniffi::method]
     fn index_doc(&self, doc_json: String) -> Result<(), TantivyIndexError> {
         let schema = self.index.schema();
-
         let doc = TantivyDocument::parse_json(&schema, &doc_json)?;
 
-        // acquire the writer lock
         let mut writer = match self.writer.lock() {
             Ok(wtr) => wtr,
             Err(_) => return Err(TantivyIndexError::WriterAcquisitionError),
@@ -167,7 +502,6 @@ impl TantivyIndex {
     fn index_docs(&self, docs_json: String) -> Result<(), TantivyIndexError> {
         let schema = self.index.schema();
 
-        // acquire the writer lock
         let mut writer = match self.writer.lock() {
             Ok(wtr) => wtr,
             Err(_) => return Err(TantivyIndexError::WriterAcquisitionError),
@@ -194,7 +528,6 @@ impl TantivyIndex {
         let field = schema.get_field(&id_field)?;
         let term = Term::from_field_text(field, &id_value);
 
-        // acquire the writer lock
         let mut writer = match self.writer.lock() {
             Ok(wtr) => wtr,
             Err(_) => return Err(TantivyIndexError::WriterAcquisitionError),
@@ -215,7 +548,7 @@ impl TantivyIndex {
         let term = Term::from_field_text(field, &id_value);
 
         let searcher = self.reader.searcher();
-        let query = TermQuery::new(term, IndexRecordOption::Basic);
+        let query = tantivy::query::TermQuery::new(term, IndexRecordOption::Basic);
         let top_docs = searcher.search(&query, &TopDocs::with_limit(1))?;
 
         Ok(!top_docs.is_empty())
@@ -229,7 +562,7 @@ impl TantivyIndex {
         let term = Term::from_field_text(field, &id_value);
 
         let searcher = self.reader.searcher();
-        let query = TermQuery::new(term, IndexRecordOption::Basic);
+        let query = tantivy::query::TermQuery::new(term, IndexRecordOption::Basic);
         let top_docs = searcher.search(&query, &TopDocs::with_limit(1))?;
 
         if let Some((_, doc_address)) = top_docs.first() {
@@ -247,8 +580,7 @@ impl TantivyIndex {
     #[uniffi::method]
     fn docs_count(&self) -> u64 {
         let searcher = self.reader.searcher();
-        let doc_count = searcher.num_docs();
-        doc_count
+        searcher.num_docs()
     }
 
     #[uniffi::method]
@@ -277,7 +609,6 @@ impl TantivyIndex {
             );
         }
 
-        // TODO: return the errors back
         let parsed_query = query_parser.parse_query_lenient(&query_str).0;
 
         let limit: usize = query.top_doc_limit.try_into()?;

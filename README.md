@@ -7,90 +7,249 @@ This project provides a way to use [Tantivy](https://github.com/quickwit-oss/tan
 ## Features
 
 - Create and manage Tantivy indexes, which saves on disk
-- safe concurrency with Swift `actor`
-- Documents as Swift Codables
+- Safe concurrency with Swift `actor`
+- Documents as Swift Codables with property wrapper-based schema definition
 - Full-text search results with scores
 - Custom Unicode-aware tokenizer by default (works for all languages without configuration)
+- Native Rust schema building via FFI (no JSON schema strings needed)
+- `@TantivyDocument` macro for zero-boilerplate document definitions
 
-## Future Plans
+## Installation
 
-- [ ] Schema definition in Swift instead of JSON string
-- [ ] More search feature support (facets, filters, aggregations) from Tantivy
+Add to your `Package.swift`:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/botisan-ai/tantivy.swift.git", from: "0.1.3")
+]
+```
+
+## Quick Start
+
+### 1. Define Your Document
+
+Use property wrappers to define your schema and the `@TantivyDocument` macro to auto-generate all required boilerplate:
+
+```swift
+import TantivySwift
+
+@TantivyDocument
+struct Article: Sendable {
+    @IDField var id: String
+    @TextField var title: String
+    @TextField var body: String
+    @DateField var publishedAt: Date
+    @U64Field var viewCount: UInt64
+    @BoolField var isPublished: Bool
+
+    init(id: String, title: String, body: String, publishedAt: Date, viewCount: UInt64, isPublished: Bool) {
+        self.id = id
+        self.title = title
+        self.body = body
+        self.publishedAt = publishedAt
+        self.viewCount = viewCount
+        self.isPublished = isPublished
+    }
+}
+```
+
+That's it! The `@TantivyDocument` macro automatically generates:
+- `CodingKeys` enum
+- `init(from decoder:)` with Tantivy's array-based field unwrapping
+- `encode(to encoder:)` with proper date formatting
+- `schemaTemplate()` for schema extraction
+- `TantivyDocument` protocol conformance
+
+### 2. Create an Index and Add Documents
+
+```swift
+let index = try TantivySwiftNativeIndex<Article>(path: "./my_index")
+
+let article = Article(
+    id: "1",
+    title: "Hello World",
+    body: "This is my first article about Swift and Rust.",
+    publishedAt: Date(),
+    viewCount: 100,
+    isPublished: true
+)
+
+try await index.index(doc: article)
+```
+
+### 3. Search Documents
+
+```swift
+let query = TantivySwiftSearchQuery<Article>(
+    queryStr: "swift rust",
+    defaultFields: [.title, .body],
+    fuzzyFields: [
+        TantivySwiftFuzzyField(field: .title, prefix: true, distance: 2),
+        TantivySwiftFuzzyField(field: .body, prefix: true, distance: 2),
+    ],
+    limit: 10
+)
+
+let results = try await index.search(query: query)
+for result in results.docs {
+    print("Score: \(result.score), Title: \(result.doc.title)")
+}
+```
+
+## Property Wrappers
+
+| Wrapper | Use Case | Tantivy Type |
+|---------|----------|--------------|
+| `@IDField` | Unique identifiers (not tokenized) | text (raw tokenizer) |
+| `@TextField` | Full-text searchable content | text (unicode tokenizer) |
+| `@U64Field` | Unsigned integers | u64 |
+| `@I64Field` | Signed integers | i64 |
+| `@F64Field` / `@DoubleField` | Floating point numbers | f64 |
+| `@BoolField` | Boolean values | bool |
+| `@DateField` | Date/time values | date |
+| `@BytesField` | Binary data | bytes |
+
+### Property Wrapper Options
+
+Each wrapper accepts configuration options:
+
+```swift
+@TextField(tokenizer: .unicode, record: .withFreqsAndPositions, stored: true, fast: false, fieldnorms: true)
+var content: String
+
+@U64Field(indexed: true, stored: true, fast: true, fieldnorms: false)
+var count: UInt64
+
+@DateField(precision: .milliseconds)
+var timestamp: Date
+```
+
+## The @TantivyDocument Macro
+
+The `@TantivyDocument` macro automatically generates everything needed for a Tantivy document:
+
+| Generated | Description |
+|-----------|-------------|
+| `CodingKeys` | Enum with cases for each field |
+| `init(from:)` | Decoder that unwraps Tantivy's array-based JSON format |
+| `encode(to:)` | Encoder with proper date formatting (ISO8601) |
+| `schemaTemplate()` | Returns template instance for schema extraction |
+| `TantivyDocument` | Protocol conformance via extension |
+
+### Before (manual boilerplate)
+
+```swift
+struct Article: TantivyDocument, Sendable {
+    enum CodingKeys: String, CodingKey {
+        case id, title, body
+    }
+    
+    @IDField var id: String
+    @TextField var title: String
+    @TextField var body: String
+    
+    init(id: String, title: String, body: String) {
+        self.id = id
+        self.title = title
+        self.body = body
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        _id = IDField(wrappedValue: try container.decode([String].self, forKey: .id).first ?? "")
+        _title = TextField(wrappedValue: try container.decode([String].self, forKey: .title).first ?? "")
+        _body = TextField(wrappedValue: try container.decode([String].self, forKey: .body).first ?? "")
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encode(body, forKey: .body)
+    }
+    
+    static func schemaTemplate() -> Article {
+        return Article(id: "", title: "", body: "")
+    }
+}
+```
+
+### After (with macro)
+
+```swift
+@TantivyDocument
+struct Article: Sendable {
+    @IDField var id: String
+    @TextField var title: String
+    @TextField var body: String
+    
+    init(id: String, title: String, body: String) {
+        self.id = id
+        self.title = title
+        self.body = body
+    }
+}
+```
+
+## API Reference
+
+### TantivySwiftNativeIndex
+
+| Method | Description |
+|--------|-------------|
+| `init(path:)` | Create/open an index at the given path |
+| `index(doc:)` | Index a single document |
+| `index(docs:)` | Index multiple documents |
+| `getDoc(idField:idValue:)` | Retrieve a document by ID |
+| `deleteDoc(idField:idValue:)` | Delete a document by ID |
+| `docExists(idField:idValue:)` | Check if a document exists |
+| `search(query:)` | Search for documents |
+| `count()` | Get total document count |
+| `clear()` | Delete all documents |
+
+## Legacy API
+
+The original JSON-based schema API is still available via `TantivySwiftIndex` for backwards compatibility. See `Tests/TantivySwiftTests/TantivySwiftTests.swift` for examples.
 
 ## Design Choices
 
-- There should be ways to expose Tantivy more natively to Swift, and with UniFFI, we can even define document structures in Rust and the generated Swift Code works. However, currently I don't think I can make the perfect wrapper in Swift due to my (lack of) expertise in Swift and/or Rust. So most of the communication between Swift and Rust is done via JSON strings, and there is extra overhead on both Swift and Rust sides to serialize/deserialize the data structures.
-- There is naming convention difference between Swift and Rust, so it is preferred to use camelCase for field names in Tantivy documents when defining the schema, so that the mapping between Swift Codable structs and Tantivy documents is more natural.
-- `Identifiable` protocol is not used for documents yet, because Tantivy does not have a dedicated doc ID field concept (only `DocAddress` which is not exposed). Methods are provided to retrive documents by custom ID fields. We may consider enforcing `Identifiable` protocol in documents in the future.
-- By default, a custom Unicode-aware tokenizer is configured into the index, which works for all languages without configuration. While it doesn't have specific language features like Chinese words splitting etc, but it works well enough in vast majority of cases. The goal is to make full-text search work out-of-the-box without extra configuration. We will continue to fine-tune the tokenizer to make it more versatile.
-
-## How to Use
-
-1. Install via Swift Package Manager.
-2. You can create a new Rust project and install Tantivy via Cargo (or clone this repo), and use the script in `src/schema-gen.rs` to generate schema JSON string from your Rust document struct definition.
-    - if you choose to clone this repo, you can run the script via `cargo run --bin schema-gen`, and it will output the schema JSON string to console and save a copy in the working directory.
-3. Check out the test example in `Tests/TantivySwiftTests.swift`, specifically
-    - define your document struct conforming to `TantivyIndexDocument` and `Codable`. Paste the generated schema JSON string as the document struct's static `schemaJsonStr` function.
-    - be aware that Tantivy returns document fields as [String]'s, so it is best to follow the test example and define custom decode methods in your document struct to convert the fields to appropriate types.
-4. Initialize and set up the index in your app, and use the provided methods to add documents and search. (App example is TODO)
+- **Zero Boilerplate**: The `@TantivyDocument` macro generates all Codable conformance, eliminating manual decoder/encoder implementation.
+- **Native Schema Building**: Schema is built via native Rust FFI calls instead of JSON strings, providing type safety and better performance.
+- **Property Wrappers**: Schema definition uses Swift property wrappers that map directly to Tantivy field types.
+- **CamelCase Fields**: Use camelCase for field names to ensure natural mapping between Swift and Tantivy.
+- **Unicode Tokenizer**: A custom Unicode-aware tokenizer works for all languages without configuration.
 
 ## Development
 
-### How to Build
-
-Most of the steps are automated in the `build-ios.sh` script. And the below are the notes for understanding the steps and also specific configurations I have taken to make Tantivy compile.
-
-- There is already `rust-toolchain.toml` available, and just in case you want to do so manually, make sure to add iOS targets for rust:
+### Prerequisites
 
 ```sh
-# (currently) only aarch64 (M-chip macs) and iOS/mac devices are being targeted in the build script, if you want to extend to more targets, please add them in the build-ios.sh script
-rustup target add x86_64-apple-ios
-rustup target add aarch64-apple-ios
-rustup target add aarch64-apple-darwin
-rustup target add x86_64-apple-darwin
-rustup target add aarch64-apple-ios-sim
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin
 ```
 
-- zstd compression feature in Tantivy is diabled, because for iOS builds it couldn't be built.
-  - `was built for newer 'iOS' version (18.2) than being linked (10.0)`
+### Build
 
-- Build binary `dylib` (doesn't matter for arch)
-
-```
-cargo build --release
+```sh
+./build-ios.sh
 ```
 
-- bindgen
+This script:
+1. Builds the Rust library
+2. Generates Swift bindings via UniFFI
+3. Builds for iOS targets (device + simulator + macOS)
+4. Creates the XCFramework
+5. Updates Package.swift with new checksum
 
-```
-cargo run --release --bin uniffi-bindgen generate --library target/release/libtantivy.dylib --language swift --out-dir out
-```
+### Test
 
-- rename `out/libtantivy.modulemap` to `out/module.modulemap`
-  - very important step
-
-- build again for the iOS architectures
-
-```
-cargo build --release --target aarch64-apple-ios
-cargo build --release --target aarch64-apple-ios-sim
-# cargo build --release --target x86_64-apple-ios # (not needed for M1 macs)
+```sh
+swift test
 ```
 
-- Build XCFramework
+### Local Development
 
-```
-xcodebuild -create-xcframework \
--library target/aarch64-apple-ios/release/libtantivy.a -headers out \
--library target/aarch64-apple-ios-sim/release/libtantivy.a -headers out \
--output ./libtantivy-rs.xcframework
-```
+For local development, set `useLocalFramework = true` in `Package.swift` to use the locally built XCFramework instead of downloading from GitHub releases.
 
-- Move the `libtantivy-rs.xcframework` to your iOS project, and also move `out/tantivy.swift` to your iOS project.
+## Custom Tokenizer
 
-- Should be able to reference the Rust code from Swift now.
-
-
-### Custom Tokenizer that is Unicode aware (works for all languages)
-
-- Using https://github.com/unicode-rs/unicode-segmentation because it is more portable.
+Uses [unicode-segmentation](https://github.com/unicode-rs/unicode-segmentation) for portable Unicode-aware tokenization that works across all languages.

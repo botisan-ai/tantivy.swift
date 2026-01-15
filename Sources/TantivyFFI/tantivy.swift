@@ -606,6 +606,15 @@ public convenience init(path: String, schemaJsonStr: String)throws  {
     }
 
     
+public static func newWithSchema(path: String, schemaBuilder: TantivySchemaBuilder)throws  -> TantivyIndex  {
+    return try  FfiConverterTypeTantivyIndex_lift(try rustCallWithError(FfiConverterTypeTantivyIndexError_lift) {
+    uniffi_tantivy_fn_constructor_tantivyindex_new_with_schema(
+        FfiConverterString.lower(path),
+        FfiConverterTypeTantivySchemaBuilder_lower(schemaBuilder),$0
+    )
+})
+}
+    
 
     
 open func clearIndex()throws   {try rustCallWithError(FfiConverterTypeTantivyIndexError_lift) {
@@ -723,6 +732,317 @@ public func FfiConverterTypeTantivyIndex_lower(_ value: TantivyIndex) -> UInt64 
 }
 
 
+
+
+
+
+public protocol TantivySchemaBuilderProtocol: AnyObject, Sendable {
+    
+    func addBoolField(name: String, options: NumericFieldOptions) 
+    
+    func addBytesField(name: String, stored: Bool, fast: Bool, indexed: Bool) 
+    
+    func addDateField(name: String, options: DateFieldOptions) 
+    
+    func addF64Field(name: String, options: NumericFieldOptions) 
+    
+    func addI64Field(name: String, options: NumericFieldOptions) 
+    
+    func addTextField(name: String, options: TextFieldOptions) 
+    
+    func addU64Field(name: String, options: NumericFieldOptions) 
+    
+}
+open class TantivySchemaBuilder: TantivySchemaBuilderProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_tantivy_fn_clone_tantivyschemabuilder(self.handle, $0) }
+    }
+public convenience init() {
+    let handle =
+        try! rustCall() {
+    uniffi_tantivy_fn_constructor_tantivyschemabuilder_new($0
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        try! rustCall { uniffi_tantivy_fn_free_tantivyschemabuilder(handle, $0) }
+    }
+
+    
+
+    
+open func addBoolField(name: String, options: NumericFieldOptions)  {try! rustCall() {
+    uniffi_tantivy_fn_method_tantivyschemabuilder_add_bool_field(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(name),
+        FfiConverterTypeNumericFieldOptions_lower(options),$0
+    )
+}
+}
+    
+open func addBytesField(name: String, stored: Bool, fast: Bool, indexed: Bool)  {try! rustCall() {
+    uniffi_tantivy_fn_method_tantivyschemabuilder_add_bytes_field(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(name),
+        FfiConverterBool.lower(stored),
+        FfiConverterBool.lower(fast),
+        FfiConverterBool.lower(indexed),$0
+    )
+}
+}
+    
+open func addDateField(name: String, options: DateFieldOptions)  {try! rustCall() {
+    uniffi_tantivy_fn_method_tantivyschemabuilder_add_date_field(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(name),
+        FfiConverterTypeDateFieldOptions_lower(options),$0
+    )
+}
+}
+    
+open func addF64Field(name: String, options: NumericFieldOptions)  {try! rustCall() {
+    uniffi_tantivy_fn_method_tantivyschemabuilder_add_f64_field(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(name),
+        FfiConverterTypeNumericFieldOptions_lower(options),$0
+    )
+}
+}
+    
+open func addI64Field(name: String, options: NumericFieldOptions)  {try! rustCall() {
+    uniffi_tantivy_fn_method_tantivyschemabuilder_add_i64_field(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(name),
+        FfiConverterTypeNumericFieldOptions_lower(options),$0
+    )
+}
+}
+    
+open func addTextField(name: String, options: TextFieldOptions)  {try! rustCall() {
+    uniffi_tantivy_fn_method_tantivyschemabuilder_add_text_field(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(name),
+        FfiConverterTypeTextFieldOptions_lower(options),$0
+    )
+}
+}
+    
+open func addU64Field(name: String, options: NumericFieldOptions)  {try! rustCall() {
+    uniffi_tantivy_fn_method_tantivyschemabuilder_add_u64_field(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(name),
+        FfiConverterTypeNumericFieldOptions_lower(options),$0
+    )
+}
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTantivySchemaBuilder: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = TantivySchemaBuilder
+
+    public static func lift(_ handle: UInt64) throws -> TantivySchemaBuilder {
+        return TantivySchemaBuilder(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: TantivySchemaBuilder) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TantivySchemaBuilder {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: TantivySchemaBuilder, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTantivySchemaBuilder_lift(_ handle: UInt64) throws -> TantivySchemaBuilder {
+    return try FfiConverterTypeTantivySchemaBuilder.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTantivySchemaBuilder_lower(_ value: TantivySchemaBuilder) -> UInt64 {
+    return FfiConverterTypeTantivySchemaBuilder.lower(value)
+}
+
+
+
+
+public struct DateFieldOptions: Equatable, Hashable {
+    public var indexed: Bool
+    public var stored: Bool
+    public var fast: Bool
+    public var fieldnorms: Bool
+    public var precision: TantivyDatePrecision
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(indexed: Bool, stored: Bool, fast: Bool, fieldnorms: Bool, precision: TantivyDatePrecision) {
+        self.indexed = indexed
+        self.stored = stored
+        self.fast = fast
+        self.fieldnorms = fieldnorms
+        self.precision = precision
+    }
+
+    
+}
+
+#if compiler(>=6)
+extension DateFieldOptions: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDateFieldOptions: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DateFieldOptions {
+        return
+            try DateFieldOptions(
+                indexed: FfiConverterBool.read(from: &buf), 
+                stored: FfiConverterBool.read(from: &buf), 
+                fast: FfiConverterBool.read(from: &buf), 
+                fieldnorms: FfiConverterBool.read(from: &buf), 
+                precision: FfiConverterTypeTantivyDatePrecision.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DateFieldOptions, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.indexed, into: &buf)
+        FfiConverterBool.write(value.stored, into: &buf)
+        FfiConverterBool.write(value.fast, into: &buf)
+        FfiConverterBool.write(value.fieldnorms, into: &buf)
+        FfiConverterTypeTantivyDatePrecision.write(value.precision, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDateFieldOptions_lift(_ buf: RustBuffer) throws -> DateFieldOptions {
+    return try FfiConverterTypeDateFieldOptions.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDateFieldOptions_lower(_ value: DateFieldOptions) -> RustBuffer {
+    return FfiConverterTypeDateFieldOptions.lower(value)
+}
+
+
+public struct NumericFieldOptions: Equatable, Hashable {
+    public var indexed: Bool
+    public var stored: Bool
+    public var fast: Bool
+    public var fieldnorms: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(indexed: Bool, stored: Bool, fast: Bool, fieldnorms: Bool) {
+        self.indexed = indexed
+        self.stored = stored
+        self.fast = fast
+        self.fieldnorms = fieldnorms
+    }
+
+    
+}
+
+#if compiler(>=6)
+extension NumericFieldOptions: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNumericFieldOptions: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NumericFieldOptions {
+        return
+            try NumericFieldOptions(
+                indexed: FfiConverterBool.read(from: &buf), 
+                stored: FfiConverterBool.read(from: &buf), 
+                fast: FfiConverterBool.read(from: &buf), 
+                fieldnorms: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: NumericFieldOptions, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.indexed, into: &buf)
+        FfiConverterBool.write(value.stored, into: &buf)
+        FfiConverterBool.write(value.fast, into: &buf)
+        FfiConverterBool.write(value.fieldnorms, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNumericFieldOptions_lift(_ buf: RustBuffer) throws -> NumericFieldOptions {
+    return try FfiConverterTypeNumericFieldOptions.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNumericFieldOptions_lower(_ value: NumericFieldOptions) -> RustBuffer {
+    return FfiConverterTypeNumericFieldOptions.lower(value)
+}
 
 
 public struct TantivyFuzzyField: Equatable, Hashable {
@@ -849,6 +1169,142 @@ public func FfiConverterTypeTantivySearchQuery_lower(_ value: TantivySearchQuery
 }
 
 
+public struct TextFieldOptions: Equatable, Hashable {
+    public var tokenizer: TantivyTokenizer
+    public var record: TantivyIndexRecordOption
+    public var stored: Bool
+    public var fast: Bool
+    public var fieldnorms: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(tokenizer: TantivyTokenizer, record: TantivyIndexRecordOption, stored: Bool, fast: Bool, fieldnorms: Bool) {
+        self.tokenizer = tokenizer
+        self.record = record
+        self.stored = stored
+        self.fast = fast
+        self.fieldnorms = fieldnorms
+    }
+
+    
+}
+
+#if compiler(>=6)
+extension TextFieldOptions: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTextFieldOptions: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TextFieldOptions {
+        return
+            try TextFieldOptions(
+                tokenizer: FfiConverterTypeTantivyTokenizer.read(from: &buf), 
+                record: FfiConverterTypeTantivyIndexRecordOption.read(from: &buf), 
+                stored: FfiConverterBool.read(from: &buf), 
+                fast: FfiConverterBool.read(from: &buf), 
+                fieldnorms: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TextFieldOptions, into buf: inout [UInt8]) {
+        FfiConverterTypeTantivyTokenizer.write(value.tokenizer, into: &buf)
+        FfiConverterTypeTantivyIndexRecordOption.write(value.record, into: &buf)
+        FfiConverterBool.write(value.stored, into: &buf)
+        FfiConverterBool.write(value.fast, into: &buf)
+        FfiConverterBool.write(value.fieldnorms, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTextFieldOptions_lift(_ buf: RustBuffer) throws -> TextFieldOptions {
+    return try FfiConverterTypeTextFieldOptions.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTextFieldOptions_lower(_ value: TextFieldOptions) -> RustBuffer {
+    return FfiConverterTypeTextFieldOptions.lower(value)
+}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum TantivyDatePrecision: Equatable, Hashable {
+    
+    case seconds
+    case milliseconds
+    case microseconds
+
+
+
+}
+
+#if compiler(>=6)
+extension TantivyDatePrecision: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTantivyDatePrecision: FfiConverterRustBuffer {
+    typealias SwiftType = TantivyDatePrecision
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TantivyDatePrecision {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .seconds
+        
+        case 2: return .milliseconds
+        
+        case 3: return .microseconds
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: TantivyDatePrecision, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .seconds:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .milliseconds:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .microseconds:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTantivyDatePrecision_lift(_ buf: RustBuffer) throws -> TantivyDatePrecision {
+    return try FfiConverterTypeTantivyDatePrecision.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTantivyDatePrecision_lower(_ value: TantivyDatePrecision) -> RustBuffer {
+    return FfiConverterTypeTantivyDatePrecision.lower(value)
+}
+
+
+
 public enum TantivyIndexError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
@@ -868,6 +1324,8 @@ public enum TantivyIndexError: Swift.Error, Equatable, Hashable, Foundation.Loca
     case WriterAcquisitionError(message: String)
     
     case DocRetrievalError(message: String)
+    
+    case SchemaBuilderError(message: String)
     
 
     
@@ -928,6 +1386,10 @@ public struct FfiConverterTypeTantivyIndexError: FfiConverterRustBuffer {
             message: try FfiConverterString.read(from: &buf)
         )
         
+        case 9: return .SchemaBuilderError(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -955,6 +1417,8 @@ public struct FfiConverterTypeTantivyIndexError: FfiConverterRustBuffer {
             writeInt(&buf, Int32(7))
         case .DocRetrievalError(_ /* message is ignored*/):
             writeInt(&buf, Int32(8))
+        case .SchemaBuilderError(_ /* message is ignored*/):
+            writeInt(&buf, Int32(9))
 
         
         }
@@ -975,6 +1439,164 @@ public func FfiConverterTypeTantivyIndexError_lift(_ buf: RustBuffer) throws -> 
 public func FfiConverterTypeTantivyIndexError_lower(_ value: TantivyIndexError) -> RustBuffer {
     return FfiConverterTypeTantivyIndexError.lower(value)
 }
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum TantivyIndexRecordOption: Equatable, Hashable {
+    
+    case basic
+    case withFreqs
+    case withFreqsAndPositions
+
+
+
+}
+
+#if compiler(>=6)
+extension TantivyIndexRecordOption: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTantivyIndexRecordOption: FfiConverterRustBuffer {
+    typealias SwiftType = TantivyIndexRecordOption
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TantivyIndexRecordOption {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .basic
+        
+        case 2: return .withFreqs
+        
+        case 3: return .withFreqsAndPositions
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: TantivyIndexRecordOption, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .basic:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .withFreqs:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .withFreqsAndPositions:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTantivyIndexRecordOption_lift(_ buf: RustBuffer) throws -> TantivyIndexRecordOption {
+    return try FfiConverterTypeTantivyIndexRecordOption.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTantivyIndexRecordOption_lower(_ value: TantivyIndexRecordOption) -> RustBuffer {
+    return FfiConverterTypeTantivyIndexRecordOption.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum TantivyTokenizer: Equatable, Hashable {
+    
+    case raw
+    case `default`
+    case unicode
+    case enStem
+    case whitespace
+
+
+
+}
+
+#if compiler(>=6)
+extension TantivyTokenizer: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTantivyTokenizer: FfiConverterRustBuffer {
+    typealias SwiftType = TantivyTokenizer
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TantivyTokenizer {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .raw
+        
+        case 2: return .`default`
+        
+        case 3: return .unicode
+        
+        case 4: return .enStem
+        
+        case 5: return .whitespace
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: TantivyTokenizer, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .raw:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .`default`:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .unicode:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .enStem:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .whitespace:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTantivyTokenizer_lift(_ buf: RustBuffer) throws -> TantivyTokenizer {
+    return try FfiConverterTypeTantivyTokenizer.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTantivyTokenizer_lower(_ value: TantivyTokenizer) -> RustBuffer {
+    return FfiConverterTypeTantivyTokenizer.lower(value)
+}
+
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
@@ -1065,7 +1687,34 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tantivy_checksum_method_tantivyindex_search() != 890) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tantivy_checksum_method_tantivyschemabuilder_add_bool_field() != 55377) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tantivy_checksum_method_tantivyschemabuilder_add_bytes_field() != 13557) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tantivy_checksum_method_tantivyschemabuilder_add_date_field() != 15444) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tantivy_checksum_method_tantivyschemabuilder_add_f64_field() != 22613) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tantivy_checksum_method_tantivyschemabuilder_add_i64_field() != 12775) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tantivy_checksum_method_tantivyschemabuilder_add_text_field() != 21373) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tantivy_checksum_method_tantivyschemabuilder_add_u64_field() != 28559) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tantivy_checksum_constructor_tantivyindex_new() != 454) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tantivy_checksum_constructor_tantivyindex_new_with_schema() != 52043) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tantivy_checksum_constructor_tantivyschemabuilder_new() != 16789) {
         return InitializationResult.apiChecksumMismatch
     }
 
