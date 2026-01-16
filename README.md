@@ -253,3 +253,16 @@ For local development, set `useLocalFramework = true` in `Package.swift` to use 
 ## Custom Tokenizer
 
 Uses [unicode-segmentation](https://github.com/unicode-rs/unicode-segmentation) for portable Unicode-aware tokenization that works across all languages.
+
+## Release
+
+```sh
+git tag <version>
+git push --tags
+gh release create <version> # follow prompt to fill out information
+./gh-release.sh <version>
+```
+
+## License
+
+[MIT](LICENSE)
