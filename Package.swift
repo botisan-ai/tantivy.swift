@@ -5,7 +5,7 @@ import PackageDescription
 import CompilerPluginSupport
 
 // change this to true for local package development
-let useLocalFramework = true
+let useLocalFramework = false
 let binaryTarget: Target
 
 if useLocalFramework {
