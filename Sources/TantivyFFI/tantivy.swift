@@ -467,6 +467,54 @@ fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterInt64: FfiConverterPrimitive {
+    typealias FfiType = Int64
+    typealias SwiftType = Int64
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int64 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Int64, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterFloat: FfiConverterPrimitive {
+    typealias FfiType = Float
+    typealias SwiftType = Float
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Float {
+        return try lift(readFloat(&buf))
+    }
+
+    public static func write(_ value: Float, into buf: inout [UInt8]) {
+        writeFloat(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterDouble: FfiConverterPrimitive {
+    typealias FfiType = Double
+    typealias SwiftType = Double
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Double {
+        return try lift(readDouble(&buf))
+    }
+
+    public static func write(_ value: Double, into buf: inout [UInt8]) {
+        writeDouble(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterBool : FfiConverter {
     typealias FfiType = Int8
     typealias SwiftType = Bool
@@ -529,6 +577,24 @@ fileprivate struct FfiConverterString: FfiConverter {
     }
 }
 
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterData: FfiConverterRustBuffer {
+    typealias SwiftType = Data
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Data {
+        let len: Int32 = try readInt(&buf)
+        return Data(try readBytes(&buf, count: Int(len)))
+    }
+
+    public static func write(_ value: Data, into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        writeBytes(&buf, value)
+    }
+}
+
 
 
 
@@ -536,19 +602,27 @@ public protocol TantivyIndexProtocol: AnyObject, Sendable {
     
     func clearIndex() throws 
     
-    func deleteDoc(idField: String, idValue: String) throws 
+    func commit() throws 
     
-    func docExists(idField: String, idValue: String) throws  -> Bool
+    func deleteDoc(id: DocumentField) throws 
+    
+    func docExists(id: DocumentField) throws  -> Bool
     
     func docsCount()  -> UInt64
     
-    func getDoc(idField: String, idValue: String) throws  -> String
+    func getDoc(id: DocumentField) throws  -> TantivyDocumentFields
     
-    func indexDoc(docJson: String) throws 
+    func getDocsByIds(ids: [DocumentField]) throws  -> [TantivyDocumentFields]
     
-    func indexDocs(docsJson: String) throws 
+    func indexDoc(doc: TantivyDocumentFields) throws 
     
-    func search(query: TantivySearchQuery) throws  -> String
+    func indexDocs(docs: [TantivyDocumentFields]) throws 
+    
+    func search(query: TantivySearchQuery) throws  -> TantivySearchResults
+    
+    func searchDocIds(query: TantivySearchQuery, idField: String) throws  -> [TantivySearchHit]
+    
+    func searchDsl(queryJson: String, topDocLimit: UInt32, topDocOffset: UInt32) throws  -> TantivySearchResults
     
 }
 open class TantivyIndex: TantivyIndexProtocol, @unchecked Sendable {
@@ -590,16 +664,7 @@ open class TantivyIndex: TantivyIndexProtocol, @unchecked Sendable {
     public func uniffiCloneHandle() -> UInt64 {
         return try! rustCall { uniffi_tantivy_fn_clone_tantivyindex(self.handle, $0) }
     }
-public convenience init(path: String, schemaJsonStr: String)throws  {
-    let handle =
-        try rustCallWithError(FfiConverterTypeTantivyIndexError_lift) {
-    uniffi_tantivy_fn_constructor_tantivyindex_new(
-        FfiConverterString.lower(path),
-        FfiConverterString.lower(schemaJsonStr),$0
-    )
-}
-    self.init(unsafeFromHandle: handle)
-}
+    // No primary constructor declared for this class.
 
     deinit {
         try! rustCall { uniffi_tantivy_fn_free_tantivyindex(handle, $0) }
@@ -624,21 +689,26 @@ open func clearIndex()throws   {try rustCallWithError(FfiConverterTypeTantivyInd
 }
 }
     
-open func deleteDoc(idField: String, idValue: String)throws   {try rustCallWithError(FfiConverterTypeTantivyIndexError_lift) {
-    uniffi_tantivy_fn_method_tantivyindex_delete_doc(
-            self.uniffiCloneHandle(),
-        FfiConverterString.lower(idField),
-        FfiConverterString.lower(idValue),$0
+open func commit()throws   {try rustCallWithError(FfiConverterTypeTantivyIndexError_lift) {
+    uniffi_tantivy_fn_method_tantivyindex_commit(
+            self.uniffiCloneHandle(),$0
     )
 }
 }
     
-open func docExists(idField: String, idValue: String)throws  -> Bool  {
+open func deleteDoc(id: DocumentField)throws   {try rustCallWithError(FfiConverterTypeTantivyIndexError_lift) {
+    uniffi_tantivy_fn_method_tantivyindex_delete_doc(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeDocumentField_lower(id),$0
+    )
+}
+}
+    
+open func docExists(id: DocumentField)throws  -> Bool  {
     return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeTantivyIndexError_lift) {
     uniffi_tantivy_fn_method_tantivyindex_doc_exists(
             self.uniffiCloneHandle(),
-        FfiConverterString.lower(idField),
-        FfiConverterString.lower(idValue),$0
+        FfiConverterTypeDocumentField_lower(id),$0
     )
 })
 }
@@ -651,37 +721,66 @@ open func docsCount() -> UInt64  {
 })
 }
     
-open func getDoc(idField: String, idValue: String)throws  -> String  {
-    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeTantivyIndexError_lift) {
+open func getDoc(id: DocumentField)throws  -> TantivyDocumentFields  {
+    return try  FfiConverterTypeTantivyDocumentFields_lift(try rustCallWithError(FfiConverterTypeTantivyIndexError_lift) {
     uniffi_tantivy_fn_method_tantivyindex_get_doc(
             self.uniffiCloneHandle(),
-        FfiConverterString.lower(idField),
-        FfiConverterString.lower(idValue),$0
+        FfiConverterTypeDocumentField_lower(id),$0
     )
 })
 }
     
-open func indexDoc(docJson: String)throws   {try rustCallWithError(FfiConverterTypeTantivyIndexError_lift) {
+open func getDocsByIds(ids: [DocumentField])throws  -> [TantivyDocumentFields]  {
+    return try  FfiConverterSequenceTypeTantivyDocumentFields.lift(try rustCallWithError(FfiConverterTypeTantivyIndexError_lift) {
+    uniffi_tantivy_fn_method_tantivyindex_get_docs_by_ids(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceTypeDocumentField.lower(ids),$0
+    )
+})
+}
+    
+open func indexDoc(doc: TantivyDocumentFields)throws   {try rustCallWithError(FfiConverterTypeTantivyIndexError_lift) {
     uniffi_tantivy_fn_method_tantivyindex_index_doc(
             self.uniffiCloneHandle(),
-        FfiConverterString.lower(docJson),$0
+        FfiConverterTypeTantivyDocumentFields_lower(doc),$0
     )
 }
 }
     
-open func indexDocs(docsJson: String)throws   {try rustCallWithError(FfiConverterTypeTantivyIndexError_lift) {
+open func indexDocs(docs: [TantivyDocumentFields])throws   {try rustCallWithError(FfiConverterTypeTantivyIndexError_lift) {
     uniffi_tantivy_fn_method_tantivyindex_index_docs(
             self.uniffiCloneHandle(),
-        FfiConverterString.lower(docsJson),$0
+        FfiConverterSequenceTypeTantivyDocumentFields.lower(docs),$0
     )
 }
 }
     
-open func search(query: TantivySearchQuery)throws  -> String  {
-    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeTantivyIndexError_lift) {
+open func search(query: TantivySearchQuery)throws  -> TantivySearchResults  {
+    return try  FfiConverterTypeTantivySearchResults_lift(try rustCallWithError(FfiConverterTypeTantivyIndexError_lift) {
     uniffi_tantivy_fn_method_tantivyindex_search(
             self.uniffiCloneHandle(),
         FfiConverterTypeTantivySearchQuery_lower(query),$0
+    )
+})
+}
+    
+open func searchDocIds(query: TantivySearchQuery, idField: String)throws  -> [TantivySearchHit]  {
+    return try  FfiConverterSequenceTypeTantivySearchHit.lift(try rustCallWithError(FfiConverterTypeTantivyIndexError_lift) {
+    uniffi_tantivy_fn_method_tantivyindex_search_doc_ids(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeTantivySearchQuery_lower(query),
+        FfiConverterString.lower(idField),$0
+    )
+})
+}
+    
+open func searchDsl(queryJson: String, topDocLimit: UInt32, topDocOffset: UInt32)throws  -> TantivySearchResults  {
+    return try  FfiConverterTypeTantivySearchResults_lift(try rustCallWithError(FfiConverterTypeTantivyIndexError_lift) {
+    uniffi_tantivy_fn_method_tantivyindex_search_dsl(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(queryJson),
+        FfiConverterUInt32.lower(topDocLimit),
+        FfiConverterUInt32.lower(topDocOffset),$0
     )
 })
 }
@@ -746,7 +845,11 @@ public protocol TantivySchemaBuilderProtocol: AnyObject, Sendable {
     
     func addF64Field(name: String, options: NumericFieldOptions) 
     
+    func addFacetField(name: String, options: FacetFieldOptions) 
+    
     func addI64Field(name: String, options: NumericFieldOptions) 
+    
+    func addJsonField(name: String, options: JsonFieldOptions) 
     
     func addTextField(name: String, options: TextFieldOptions) 
     
@@ -846,11 +949,29 @@ open func addF64Field(name: String, options: NumericFieldOptions)  {try! rustCal
 }
 }
     
+open func addFacetField(name: String, options: FacetFieldOptions)  {try! rustCall() {
+    uniffi_tantivy_fn_method_tantivyschemabuilder_add_facet_field(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(name),
+        FfiConverterTypeFacetFieldOptions_lower(options),$0
+    )
+}
+}
+    
 open func addI64Field(name: String, options: NumericFieldOptions)  {try! rustCall() {
     uniffi_tantivy_fn_method_tantivyschemabuilder_add_i64_field(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(name),
         FfiConverterTypeNumericFieldOptions_lower(options),$0
+    )
+}
+}
+    
+open func addJsonField(name: String, options: JsonFieldOptions)  {try! rustCall() {
+    uniffi_tantivy_fn_method_tantivyschemabuilder_add_json_field(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(name),
+        FfiConverterTypeJsonFieldOptions_lower(options),$0
     )
 }
 }
@@ -985,6 +1106,185 @@ public func FfiConverterTypeDateFieldOptions_lower(_ value: DateFieldOptions) ->
 }
 
 
+/**
+ * A single document field
+ */
+public struct DocumentField: Equatable, Hashable {
+    public var name: String
+    public var value: FieldValue
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, value: FieldValue) {
+        self.name = name
+        self.value = value
+    }
+
+    
+}
+
+#if compiler(>=6)
+extension DocumentField: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDocumentField: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DocumentField {
+        return
+            try DocumentField(
+                name: FfiConverterString.read(from: &buf), 
+                value: FfiConverterTypeFieldValue.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DocumentField, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterTypeFieldValue.write(value.value, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDocumentField_lift(_ buf: RustBuffer) throws -> DocumentField {
+    return try FfiConverterTypeDocumentField.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDocumentField_lower(_ value: DocumentField) -> RustBuffer {
+    return FfiConverterTypeDocumentField.lower(value)
+}
+
+
+public struct FacetFieldOptions: Equatable, Hashable {
+    public var stored: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(stored: Bool) {
+        self.stored = stored
+    }
+
+    
+}
+
+#if compiler(>=6)
+extension FacetFieldOptions: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFacetFieldOptions: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FacetFieldOptions {
+        return
+            try FacetFieldOptions(
+                stored: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FacetFieldOptions, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.stored, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFacetFieldOptions_lift(_ buf: RustBuffer) throws -> FacetFieldOptions {
+    return try FfiConverterTypeFacetFieldOptions.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFacetFieldOptions_lower(_ value: FacetFieldOptions) -> RustBuffer {
+    return FfiConverterTypeFacetFieldOptions.lower(value)
+}
+
+
+public struct JsonFieldOptions: Equatable, Hashable {
+    public var stored: Bool
+    public var indexed: Bool
+    public var fast: Bool
+    public var tokenizer: TantivyTokenizer
+    public var record: TantivyIndexRecordOption
+    public var fieldnorms: Bool
+    public var expandDots: Bool
+    public var fastTokenizer: TantivyTokenizer?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(stored: Bool, indexed: Bool, fast: Bool, tokenizer: TantivyTokenizer, record: TantivyIndexRecordOption, fieldnorms: Bool, expandDots: Bool, fastTokenizer: TantivyTokenizer?) {
+        self.stored = stored
+        self.indexed = indexed
+        self.fast = fast
+        self.tokenizer = tokenizer
+        self.record = record
+        self.fieldnorms = fieldnorms
+        self.expandDots = expandDots
+        self.fastTokenizer = fastTokenizer
+    }
+
+    
+}
+
+#if compiler(>=6)
+extension JsonFieldOptions: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeJsonFieldOptions: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> JsonFieldOptions {
+        return
+            try JsonFieldOptions(
+                stored: FfiConverterBool.read(from: &buf), 
+                indexed: FfiConverterBool.read(from: &buf), 
+                fast: FfiConverterBool.read(from: &buf), 
+                tokenizer: FfiConverterTypeTantivyTokenizer.read(from: &buf), 
+                record: FfiConverterTypeTantivyIndexRecordOption.read(from: &buf), 
+                fieldnorms: FfiConverterBool.read(from: &buf), 
+                expandDots: FfiConverterBool.read(from: &buf), 
+                fastTokenizer: FfiConverterOptionTypeTantivyTokenizer.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: JsonFieldOptions, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.stored, into: &buf)
+        FfiConverterBool.write(value.indexed, into: &buf)
+        FfiConverterBool.write(value.fast, into: &buf)
+        FfiConverterTypeTantivyTokenizer.write(value.tokenizer, into: &buf)
+        FfiConverterTypeTantivyIndexRecordOption.write(value.record, into: &buf)
+        FfiConverterBool.write(value.fieldnorms, into: &buf)
+        FfiConverterBool.write(value.expandDots, into: &buf)
+        FfiConverterOptionTypeTantivyTokenizer.write(value.fastTokenizer, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeJsonFieldOptions_lift(_ buf: RustBuffer) throws -> JsonFieldOptions {
+    return try FfiConverterTypeJsonFieldOptions.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeJsonFieldOptions_lower(_ value: JsonFieldOptions) -> RustBuffer {
+    return FfiConverterTypeJsonFieldOptions.lower(value)
+}
+
+
 public struct NumericFieldOptions: Equatable, Hashable {
     public var indexed: Bool
     public var stored: Bool
@@ -1045,6 +1345,57 @@ public func FfiConverterTypeNumericFieldOptions_lower(_ value: NumericFieldOptio
 }
 
 
+/**
+ * A complete document (scalar fields only)
+ */
+public struct TantivyDocumentFields: Equatable, Hashable {
+    public var fields: [DocumentField]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(fields: [DocumentField]) {
+        self.fields = fields
+    }
+
+    
+}
+
+#if compiler(>=6)
+extension TantivyDocumentFields: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTantivyDocumentFields: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TantivyDocumentFields {
+        return
+            try TantivyDocumentFields(
+                fields: FfiConverterSequenceTypeDocumentField.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TantivyDocumentFields, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeDocumentField.write(value.fields, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTantivyDocumentFields_lift(_ buf: RustBuffer) throws -> TantivyDocumentFields {
+    return try FfiConverterTypeTantivyDocumentFields.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTantivyDocumentFields_lower(_ value: TantivyDocumentFields) -> RustBuffer {
+    return FfiConverterTypeTantivyDocumentFields.lower(value)
+}
+
+
 public struct TantivyFuzzyField: Equatable, Hashable {
     public var fieldName: String
     public var prefix: Bool
@@ -1102,6 +1453,58 @@ public func FfiConverterTypeTantivyFuzzyField_lift(_ buf: RustBuffer) throws -> 
 #endif
 public func FfiConverterTypeTantivyFuzzyField_lower(_ value: TantivyFuzzyField) -> RustBuffer {
     return FfiConverterTypeTantivyFuzzyField.lower(value)
+}
+
+
+public struct TantivySearchHit: Equatable, Hashable {
+    public var docId: UInt64
+    public var score: Float
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(docId: UInt64, score: Float) {
+        self.docId = docId
+        self.score = score
+    }
+
+    
+}
+
+#if compiler(>=6)
+extension TantivySearchHit: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTantivySearchHit: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TantivySearchHit {
+        return
+            try TantivySearchHit(
+                docId: FfiConverterUInt64.read(from: &buf), 
+                score: FfiConverterFloat.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TantivySearchHit, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.docId, into: &buf)
+        FfiConverterFloat.write(value.score, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTantivySearchHit_lift(_ buf: RustBuffer) throws -> TantivySearchHit {
+    return try FfiConverterTypeTantivySearchHit.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTantivySearchHit_lower(_ value: TantivySearchHit) -> RustBuffer {
+    return FfiConverterTypeTantivySearchHit.lower(value)
 }
 
 
@@ -1169,6 +1572,110 @@ public func FfiConverterTypeTantivySearchQuery_lower(_ value: TantivySearchQuery
 }
 
 
+public struct TantivySearchResult: Equatable, Hashable {
+    public var score: Float
+    public var doc: TantivyDocumentFields
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(score: Float, doc: TantivyDocumentFields) {
+        self.score = score
+        self.doc = doc
+    }
+
+    
+}
+
+#if compiler(>=6)
+extension TantivySearchResult: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTantivySearchResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TantivySearchResult {
+        return
+            try TantivySearchResult(
+                score: FfiConverterFloat.read(from: &buf), 
+                doc: FfiConverterTypeTantivyDocumentFields.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TantivySearchResult, into buf: inout [UInt8]) {
+        FfiConverterFloat.write(value.score, into: &buf)
+        FfiConverterTypeTantivyDocumentFields.write(value.doc, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTantivySearchResult_lift(_ buf: RustBuffer) throws -> TantivySearchResult {
+    return try FfiConverterTypeTantivySearchResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTantivySearchResult_lower(_ value: TantivySearchResult) -> RustBuffer {
+    return FfiConverterTypeTantivySearchResult.lower(value)
+}
+
+
+public struct TantivySearchResults: Equatable, Hashable {
+    public var count: UInt64
+    public var docs: [TantivySearchResult]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(count: UInt64, docs: [TantivySearchResult]) {
+        self.count = count
+        self.docs = docs
+    }
+
+    
+}
+
+#if compiler(>=6)
+extension TantivySearchResults: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTantivySearchResults: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TantivySearchResults {
+        return
+            try TantivySearchResults(
+                count: FfiConverterUInt64.read(from: &buf), 
+                docs: FfiConverterSequenceTypeTantivySearchResult.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TantivySearchResults, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.count, into: &buf)
+        FfiConverterSequenceTypeTantivySearchResult.write(value.docs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTantivySearchResults_lift(_ buf: RustBuffer) throws -> TantivySearchResults {
+    return try FfiConverterTypeTantivySearchResults.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTantivySearchResults_lower(_ value: TantivySearchResults) -> RustBuffer {
+    return FfiConverterTypeTantivySearchResults.lower(value)
+}
+
+
 public struct TextFieldOptions: Equatable, Hashable {
     public var tokenizer: TantivyTokenizer
     public var record: TantivyIndexRecordOption
@@ -1231,6 +1738,153 @@ public func FfiConverterTypeTextFieldOptions_lift(_ buf: RustBuffer) throws -> T
 public func FfiConverterTypeTextFieldOptions_lower(_ value: TextFieldOptions) -> RustBuffer {
     return FfiConverterTypeTextFieldOptions.lower(value)
 }
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * A field value passed from Swift - no JSON serialization needed
+ */
+
+public enum FieldValue: Equatable, Hashable {
+    
+    case text(String
+    )
+    case u64(UInt64
+    )
+    case i64(Int64
+    )
+    case f64(Double
+    )
+    case bool(Bool
+    )
+    /**
+     * Unix timestamp in microseconds
+     */
+    case date(Int64
+    )
+    case bytes(Data
+    )
+    case facet(String
+    )
+    case json(String
+    )
+
+
+
+}
+
+#if compiler(>=6)
+extension FieldValue: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFieldValue: FfiConverterRustBuffer {
+    typealias SwiftType = FieldValue
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FieldValue {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .text(try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .u64(try FfiConverterUInt64.read(from: &buf)
+        )
+        
+        case 3: return .i64(try FfiConverterInt64.read(from: &buf)
+        )
+        
+        case 4: return .f64(try FfiConverterDouble.read(from: &buf)
+        )
+        
+        case 5: return .bool(try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 6: return .date(try FfiConverterInt64.read(from: &buf)
+        )
+        
+        case 7: return .bytes(try FfiConverterData.read(from: &buf)
+        )
+        
+        case 8: return .facet(try FfiConverterString.read(from: &buf)
+        )
+        
+        case 9: return .json(try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: FieldValue, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .text(v1):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(v1, into: &buf)
+            
+        
+        case let .u64(v1):
+            writeInt(&buf, Int32(2))
+            FfiConverterUInt64.write(v1, into: &buf)
+            
+        
+        case let .i64(v1):
+            writeInt(&buf, Int32(3))
+            FfiConverterInt64.write(v1, into: &buf)
+            
+        
+        case let .f64(v1):
+            writeInt(&buf, Int32(4))
+            FfiConverterDouble.write(v1, into: &buf)
+            
+        
+        case let .bool(v1):
+            writeInt(&buf, Int32(5))
+            FfiConverterBool.write(v1, into: &buf)
+            
+        
+        case let .date(v1):
+            writeInt(&buf, Int32(6))
+            FfiConverterInt64.write(v1, into: &buf)
+            
+        
+        case let .bytes(v1):
+            writeInt(&buf, Int32(7))
+            FfiConverterData.write(v1, into: &buf)
+            
+        
+        case let .facet(v1):
+            writeInt(&buf, Int32(8))
+            FfiConverterString.write(v1, into: &buf)
+            
+        
+        case let .json(v1):
+            writeInt(&buf, Int32(9))
+            FfiConverterString.write(v1, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFieldValue_lift(_ buf: RustBuffer) throws -> FieldValue {
+    return try FfiConverterTypeFieldValue.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFieldValue_lower(_ value: FieldValue) -> RustBuffer {
+    return FfiConverterTypeFieldValue.lower(value)
+}
+
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
@@ -1319,6 +1973,8 @@ public enum TantivyIndexError: Swift.Error, Equatable, Hashable, Foundation.Loca
     
     case DocParsingError(message: String)
     
+    case FacetParseError(message: String)
+    
     case TryFromIntError(message: String)
     
     case WriterAcquisitionError(message: String)
@@ -1326,6 +1982,8 @@ public enum TantivyIndexError: Swift.Error, Equatable, Hashable, Foundation.Loca
     case DocRetrievalError(message: String)
     
     case SchemaBuilderError(message: String)
+    
+    case QueryError(message: String)
     
 
     
@@ -1374,19 +2032,27 @@ public struct FfiConverterTypeTantivyIndexError: FfiConverterRustBuffer {
             message: try FfiConverterString.read(from: &buf)
         )
         
-        case 6: return .TryFromIntError(
+        case 6: return .FacetParseError(
             message: try FfiConverterString.read(from: &buf)
         )
         
-        case 7: return .WriterAcquisitionError(
+        case 7: return .TryFromIntError(
             message: try FfiConverterString.read(from: &buf)
         )
         
-        case 8: return .DocRetrievalError(
+        case 8: return .WriterAcquisitionError(
             message: try FfiConverterString.read(from: &buf)
         )
         
-        case 9: return .SchemaBuilderError(
+        case 9: return .DocRetrievalError(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 10: return .SchemaBuilderError(
+            message: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 11: return .QueryError(
             message: try FfiConverterString.read(from: &buf)
         )
         
@@ -1411,14 +2077,18 @@ public struct FfiConverterTypeTantivyIndexError: FfiConverterRustBuffer {
             writeInt(&buf, Int32(4))
         case .DocParsingError(_ /* message is ignored*/):
             writeInt(&buf, Int32(5))
-        case .TryFromIntError(_ /* message is ignored*/):
+        case .FacetParseError(_ /* message is ignored*/):
             writeInt(&buf, Int32(6))
-        case .WriterAcquisitionError(_ /* message is ignored*/):
+        case .TryFromIntError(_ /* message is ignored*/):
             writeInt(&buf, Int32(7))
-        case .DocRetrievalError(_ /* message is ignored*/):
+        case .WriterAcquisitionError(_ /* message is ignored*/):
             writeInt(&buf, Int32(8))
-        case .SchemaBuilderError(_ /* message is ignored*/):
+        case .DocRetrievalError(_ /* message is ignored*/):
             writeInt(&buf, Int32(9))
+        case .SchemaBuilderError(_ /* message is ignored*/):
+            writeInt(&buf, Int32(10))
+        case .QueryError(_ /* message is ignored*/):
+            writeInt(&buf, Int32(11))
 
         
         }
@@ -1601,6 +2271,30 @@ public func FfiConverterTypeTantivyTokenizer_lower(_ value: TantivyTokenizer) ->
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeTantivyTokenizer: FfiConverterRustBuffer {
+    typealias SwiftType = TantivyTokenizer?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeTantivyTokenizer.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeTantivyTokenizer.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
     typealias SwiftType = [String]
 
@@ -1618,6 +2312,56 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterString.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeDocumentField: FfiConverterRustBuffer {
+    typealias SwiftType = [DocumentField]
+
+    public static func write(_ value: [DocumentField], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeDocumentField.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [DocumentField] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [DocumentField]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeDocumentField.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeTantivyDocumentFields: FfiConverterRustBuffer {
+    typealias SwiftType = [TantivyDocumentFields]
+
+    public static func write(_ value: [TantivyDocumentFields], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeTantivyDocumentFields.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [TantivyDocumentFields] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [TantivyDocumentFields]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeTantivyDocumentFields.read(from: &buf))
         }
         return seq
     }
@@ -1648,6 +2392,56 @@ fileprivate struct FfiConverterSequenceTypeTantivyFuzzyField: FfiConverterRustBu
     }
 }
 
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeTantivySearchHit: FfiConverterRustBuffer {
+    typealias SwiftType = [TantivySearchHit]
+
+    public static func write(_ value: [TantivySearchHit], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeTantivySearchHit.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [TantivySearchHit] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [TantivySearchHit]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeTantivySearchHit.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeTantivySearchResult: FfiConverterRustBuffer {
+    typealias SwiftType = [TantivySearchResult]
+
+    public static func write(_ value: [TantivySearchResult], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeTantivySearchResult.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [TantivySearchResult] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [TantivySearchResult]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeTantivySearchResult.read(from: &buf))
+        }
+        return seq
+    }
+}
+
 private enum InitializationResult {
     case ok
     case contractVersionMismatch
@@ -1666,25 +2460,37 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tantivy_checksum_method_tantivyindex_clear_index() != 27081) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tantivy_checksum_method_tantivyindex_delete_doc() != 43482) {
+    if (uniffi_tantivy_checksum_method_tantivyindex_commit() != 43767) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tantivy_checksum_method_tantivyindex_doc_exists() != 15636) {
+    if (uniffi_tantivy_checksum_method_tantivyindex_delete_doc() != 42366) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tantivy_checksum_method_tantivyindex_doc_exists() != 46277) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tantivy_checksum_method_tantivyindex_docs_count() != 27948) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tantivy_checksum_method_tantivyindex_get_doc() != 62796) {
+    if (uniffi_tantivy_checksum_method_tantivyindex_get_doc() != 36267) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tantivy_checksum_method_tantivyindex_index_doc() != 30803) {
+    if (uniffi_tantivy_checksum_method_tantivyindex_get_docs_by_ids() != 15134) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tantivy_checksum_method_tantivyindex_index_docs() != 50337) {
+    if (uniffi_tantivy_checksum_method_tantivyindex_index_doc() != 42651) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tantivy_checksum_method_tantivyindex_search() != 890) {
+    if (uniffi_tantivy_checksum_method_tantivyindex_index_docs() != 51417) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tantivy_checksum_method_tantivyindex_search() != 50109) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tantivy_checksum_method_tantivyindex_search_doc_ids() != 800) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tantivy_checksum_method_tantivyindex_search_dsl() != 49563) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tantivy_checksum_method_tantivyschemabuilder_add_bool_field() != 55377) {
@@ -1699,16 +2505,19 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tantivy_checksum_method_tantivyschemabuilder_add_f64_field() != 22613) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_tantivy_checksum_method_tantivyschemabuilder_add_facet_field() != 19837) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_tantivy_checksum_method_tantivyschemabuilder_add_i64_field() != 12775) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_tantivy_checksum_method_tantivyschemabuilder_add_json_field() != 16732) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tantivy_checksum_method_tantivyschemabuilder_add_text_field() != 21373) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tantivy_checksum_method_tantivyschemabuilder_add_u64_field() != 28559) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_tantivy_checksum_constructor_tantivyindex_new() != 454) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tantivy_checksum_constructor_tantivyindex_new_with_schema() != 52043) {

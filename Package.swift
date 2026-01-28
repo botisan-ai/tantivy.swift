@@ -5,7 +5,7 @@ import PackageDescription
 import CompilerPluginSupport
 
 // change this to true for local package development
-let useLocalFramework = false
+let useLocalFramework = true
 let binaryTarget: Target
 
 if useLocalFramework {
@@ -16,8 +16,8 @@ if useLocalFramework {
         path: "./build/libtantivy-rs.xcframework"
     )
 } else {
-    let releaseTag = "0.2.0"
-    let releaseChecksum = "fbbe6220a3f968e265fb9ec6c0fda4be2c924cfc513a3aaa6653f634ae820fd3"
+    let releaseTag = "0.3.0"
+    let releaseChecksum = "5360882c0d9419b1ba0e4f2a4ffb391642d84ab0158a45e54e692addc93dd9a4"
     binaryTarget = .binaryTarget(
         name: "TantivyRS",
         url:

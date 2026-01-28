@@ -53,17 +53,10 @@ struct Article: Sendable {
 }
 ```
 
-That's it! The `@TantivyDocument` macro automatically generates:
-- `CodingKeys` enum
-- `init(from decoder:)` with Tantivy's array-based field unwrapping
-- `encode(to encoder:)` with proper date formatting
-- `schemaTemplate()` for schema extraction
-- `TantivyDocument` protocol conformance
-
 ### 2. Create an Index and Add Documents
 
 ```swift
-let index = try TantivySwiftNativeIndex<Article>(path: "./my_index")
+let index = try TantivySwiftIndex<Article>(path: "./my_index")
 
 let article = Article(
     id: "1",
@@ -96,6 +89,27 @@ for result in results.docs {
 }
 ```
 
+### Advanced Queries (Query DSL)
+
+Use the query DSL to compose field filters (facets, exact terms, ranges, etc.):
+
+```swift
+let textQuery = TantivyQuery.queryString(
+    TantivyQueryString(query: "swift", defaultFields: ["title", "body"])
+)
+
+let facetQuery = TantivyQuery.term(
+    TantivyQueryTerm(name: "category", value: .facet("/tech"))
+)
+
+let combined = TantivyQuery.boolean([
+    TantivyBooleanClause(occur: .must, query: textQuery),
+    TantivyBooleanClause(occur: .must, query: facetQuery),
+])
+
+let results = try await index.search(query: combined, limit: 10, offset: 0)
+```
+
 ## Property Wrappers
 
 | Wrapper | Use Case | Tantivy Type |
@@ -108,6 +122,8 @@ for result in results.docs {
 | `@BoolField` | Boolean values | bool |
 | `@DateField` | Date/time values | date |
 | `@BytesField` | Binary data | bytes |
+| `@FacetField` | Faceted categories | facet |
+| `@JsonField` | JSON object fields | json |
 
 ### Property Wrapper Options
 
@@ -124,76 +140,9 @@ var count: UInt64
 var timestamp: Date
 ```
 
-## The @TantivyDocument Macro
-
-The `@TantivyDocument` macro automatically generates everything needed for a Tantivy document:
-
-| Generated | Description |
-|-----------|-------------|
-| `CodingKeys` | Enum with cases for each field |
-| `init(from:)` | Decoder that unwraps Tantivy's array-based JSON format |
-| `encode(to:)` | Encoder with proper date formatting (ISO8601) |
-| `schemaTemplate()` | Returns template instance for schema extraction |
-| `TantivyDocument` | Protocol conformance via extension |
-
-### Before (manual boilerplate)
-
-```swift
-struct Article: TantivyDocument, Sendable {
-    enum CodingKeys: String, CodingKey {
-        case id, title, body
-    }
-    
-    @IDField var id: String
-    @TextField var title: String
-    @TextField var body: String
-    
-    init(id: String, title: String, body: String) {
-        self.id = id
-        self.title = title
-        self.body = body
-    }
-    
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        _id = IDField(wrappedValue: try container.decode([String].self, forKey: .id).first ?? "")
-        _title = TextField(wrappedValue: try container.decode([String].self, forKey: .title).first ?? "")
-        _body = TextField(wrappedValue: try container.decode([String].self, forKey: .body).first ?? "")
-    }
-    
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(title, forKey: .title)
-        try container.encode(body, forKey: .body)
-    }
-    
-    static func schemaTemplate() -> Article {
-        return Article(id: "", title: "", body: "")
-    }
-}
-```
-
-### After (with macro)
-
-```swift
-@TantivyDocument
-struct Article: Sendable {
-    @IDField var id: String
-    @TextField var title: String
-    @TextField var body: String
-    
-    init(id: String, title: String, body: String) {
-        self.id = id
-        self.title = title
-        self.body = body
-    }
-}
-```
-
 ## API Reference
 
-### TantivySwiftNativeIndex
+### TantivySwiftIndex
 
 | Method | Description |
 |--------|-------------|
@@ -206,10 +155,6 @@ struct Article: Sendable {
 | `search(query:)` | Search for documents |
 | `count()` | Get total document count |
 | `clear()` | Delete all documents |
-
-## Legacy API
-
-The original JSON-based schema API is still available via `TantivySwiftIndex` for backwards compatibility. See `Tests/TantivySwiftTests/TantivySwiftTests.swift` for examples.
 
 ## Design Choices
 

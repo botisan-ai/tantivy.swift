@@ -26,9 +26,10 @@ public struct TantivyDocumentMacro: MemberMacro, ExtensionMacro {
         var declarations: [DeclSyntax] = []
         
         declarations.append(generateCodingKeys(fields: fields))
-        declarations.append(generateInitFromDecoder(fields: fields, structName: structName))
         declarations.append(generateEncodeToEncoder(fields: fields))
         declarations.append(generateSchemaTemplate(fields: fields, structName: structName))
+        declarations.append(generateInitFromFields(fields: fields))
+        declarations.append(generateToTantivyDocument(fields: fields))
         
         return declarations
     }
@@ -63,7 +64,7 @@ public struct TantivyDocumentMacro: MemberMacro, ExtensionMacro {
                 if let attr = attribute.as(AttributeSyntax.self),
                    let attrName = attr.attributeName.as(IdentifierTypeSyntax.self) {
                     let name = attrName.name.text
-                    if ["IDField", "TextField", "U64Field", "I64Field", "F64Field", "BoolField", "DateField", "BytesField"].contains(name) {
+                    if ["IDField", "TextField", "U64Field", "I64Field", "F64Field", "BoolField", "DateField", "BytesField", "FacetField", "JsonField"].contains(name) {
                         wrapperType = name
                         break
                     }
@@ -87,86 +88,96 @@ public struct TantivyDocumentMacro: MemberMacro, ExtensionMacro {
             """
     }
     
-    private static func generateInitFromDecoder(fields: [FieldInfo], structName: String) -> DeclSyntax {
+    private static func generateInitFromFields(fields: [FieldInfo]) -> DeclSyntax {
         var lines: [String] = []
-        lines.append("let container = try decoder.container(keyedBy: CodingKeys.self)")
-        
+        lines.append("let map = TantivyDocumentFieldMap(fields)")
+
         for field in fields {
-            let decodeLine = generateDecodeLine(for: field)
-            lines.append(decodeLine)
+            lines.append(generateInitFromFieldsLine(for: field))
         }
-        
+
         let body = lines.joined(separator: "\n        ")
         return """
-            public init(from decoder: Decoder) throws {
+            public init(fromFields fields: TantivyDocumentFields) throws {
                 \(raw: body)
             }
             """
     }
-    
-    private static func generateDecodeLine(for field: FieldInfo) -> String {
+
+    private static func generateInitFromFieldsLine(for field: FieldInfo) -> String {
         let name = field.name
         let type = field.type
         let wrapper = field.wrapperType ?? "TextField"
-        
+        let isOptional = type.hasSuffix("?")
+
         switch wrapper {
         case "IDField", "TextField":
-            if type == "String" {
-                return "_\(name) = \(wrapper)(wrappedValue: try container.decode([String].self, forKey: .\(name)).first ?? \"\")"
-            } else if type.hasSuffix("?") {
-                let innerType = String(type.dropLast())
-                return "_\(name) = \(wrapper)(wrappedValue: try container.decodeIfPresent([\(innerType)].self, forKey: .\(name))?.first)"
-            } else {
-                return "_\(name) = \(wrapper)(wrappedValue: try container.decode([String].self, forKey: .\(name)).first ?? \"\")"
+            if isOptional {
+                return "_\(name) = \(wrapper)(wrappedValue: map.text(\"\(name)\"))"
             }
-            
+            return "_\(name) = \(wrapper)(wrappedValue: map.text(\"\(name)\") ?? \"\")"
+
         case "U64Field":
-            if type.hasSuffix("?") {
-                return "_\(name) = \(wrapper)(wrappedValue: try container.decodeIfPresent([UInt64].self, forKey: .\(name))?.first)"
+            if isOptional {
+                return "_\(name) = \(wrapper)(wrappedValue: map.u64(\"\(name)\"))"
             }
-            return "_\(name) = \(wrapper)(wrappedValue: try container.decode([UInt64].self, forKey: .\(name)).first ?? 0)"
-            
+            return "_\(name) = \(wrapper)(wrappedValue: map.u64(\"\(name)\") ?? 0)"
+
         case "I64Field":
-            if type.hasSuffix("?") {
-                return "_\(name) = \(wrapper)(wrappedValue: try container.decodeIfPresent([Int64].self, forKey: .\(name))?.first)"
+            if isOptional {
+                return "_\(name) = \(wrapper)(wrappedValue: map.i64(\"\(name)\"))"
             }
-            return "_\(name) = \(wrapper)(wrappedValue: try container.decode([Int64].self, forKey: .\(name)).first ?? 0)"
-            
+            return "_\(name) = \(wrapper)(wrappedValue: map.i64(\"\(name)\") ?? 0)"
+
         case "F64Field":
-            if type.hasSuffix("?") {
-                return "_\(name) = \(wrapper)(wrappedValue: try container.decodeIfPresent([Double].self, forKey: .\(name))?.first)"
+            if isOptional {
+                return "_\(name) = \(wrapper)(wrappedValue: map.f64(\"\(name)\"))"
             }
-            return "_\(name) = \(wrapper)(wrappedValue: try container.decode([Double].self, forKey: .\(name)).first ?? 0.0)"
-            
+            return "_\(name) = \(wrapper)(wrappedValue: map.f64(\"\(name)\") ?? 0.0)"
+
         case "BoolField":
-            if type.hasSuffix("?") {
-                return "_\(name) = \(wrapper)(wrappedValue: try container.decodeIfPresent([Bool].self, forKey: .\(name))?.first)"
+            if isOptional {
+                return "_\(name) = \(wrapper)(wrappedValue: map.bool(\"\(name)\"))"
             }
-            return "_\(name) = \(wrapper)(wrappedValue: try container.decode([Bool].self, forKey: .\(name)).first ?? false)"
-            
+            return "_\(name) = \(wrapper)(wrappedValue: map.bool(\"\(name)\") ?? false)"
+
         case "DateField":
-            if type.hasSuffix("?") {
-                return """
-                if let dateStr = try container.decodeIfPresent([String].self, forKey: .\(name))?.first {
-                            _\(name) = \(wrapper)(wrappedValue: ISO8601DateFormatter().date(from: dateStr))
-                        } else {
-                            _\(name) = \(wrapper)(wrappedValue: nil)
-                        }
-                """
+            if isOptional {
+                return "_\(name) = \(wrapper)(wrappedValue: map.date(\"\(name)\"))"
             }
-            return """
-            let \(name)Str = try container.decode([String].self, forKey: .\(name)).first ?? ""
-                    _\(name) = \(wrapper)(wrappedValue: ISO8601DateFormatter().date(from: \(name)Str) ?? Date(timeIntervalSince1970: 0))
-            """
-            
+            return "_\(name) = \(wrapper)(wrappedValue: map.date(\"\(name)\") ?? Date(timeIntervalSince1970: 0))"
+
         case "BytesField":
-            if type.hasSuffix("?") {
-                return "_\(name) = \(wrapper)(wrappedValue: try container.decodeIfPresent([Data].self, forKey: .\(name))?.first)"
+            if isOptional {
+                return "_\(name) = \(wrapper)(wrappedValue: map.bytes(\"\(name)\"))"
             }
-            return "_\(name) = \(wrapper)(wrappedValue: try container.decode([Data].self, forKey: .\(name)).first ?? Data())"
-            
+            return "_\(name) = \(wrapper)(wrappedValue: map.bytes(\"\(name)\") ?? Data())"
+
+        case "FacetField":
+            if isOptional {
+                return "_\(name) = \(wrapper)(wrappedValue: map.facet(\"\(name)\"))"
+            }
+            return "_\(name) = \(wrapper)(wrappedValue: map.facet(\"\(name)\") ?? \"\")"
+
+        case "JsonField":
+            if isOptional {
+                let innerType = String(type.dropLast())
+                return "_\(name) = \(wrapper)(wrappedValue: try TantivyJsonCoding.decodeIfPresent(\(innerType).self, from: map.json(\"\(name)\")))"
+            }
+            let defaultValue = getDefaultValue(for: type)
+            return """
+            if let jsonValue = map.json("\(name)") {
+                        _\(name) = \(wrapper)(wrappedValue: try TantivyJsonCoding.decode(\(type).self, from: jsonValue))
+                    } else {
+                        _\(name) = \(wrapper)(wrappedValue: \(defaultValue))
+                    }
+            """
+
         default:
-            return "_\(name) = \(wrapper)(wrappedValue: try container.decode([String].self, forKey: .\(name)).first ?? \"\")"
+            if isOptional {
+                return "_\(name) = \(wrapper)(wrappedValue: map.text(\"\(name)\"))"
+            }
+            return "_\(name) = \(wrapper)(wrappedValue: map.text(\"\(name)\") ?? \"\")"
         }
     }
     
@@ -223,6 +234,73 @@ public struct TantivyDocumentMacro: MemberMacro, ExtensionMacro {
                 return \(raw: structName)(\(raw: initArgs))
             }
             """
+    }
+
+    private static func generateToTantivyDocument(fields: [FieldInfo]) -> DeclSyntax {
+        var lines: [String] = []
+        lines.append("var fields: [DocumentField] = []")
+
+        for field in fields {
+            lines.append(generateFieldAppend(for: field))
+        }
+
+        lines.append("return TantivyDocumentFields(fields: fields)")
+
+        let body = lines.joined(separator: "\n        ")
+        return """
+            public func toTantivyDocument() throws -> TantivyDocumentFields {
+                \(raw: body)
+            }
+            """
+    }
+
+    private static func generateFieldAppend(for field: FieldInfo) -> String {
+        let name = field.name
+        let wrapper = field.wrapperType ?? "TextField"
+        let isOptional = field.type.hasSuffix("?")
+        let valueName = isOptional ? "value" : name
+
+        if wrapper == "JsonField" {
+            if isOptional {
+                return """
+                if let value = \(name) {
+                            let jsonString = try TantivyJsonCoding.encode(value)
+                            fields.append(DocumentField(name: "\(name)", value: .json(jsonString)))
+                        }
+                """
+            }
+            return """
+            let jsonString = try TantivyJsonCoding.encode(\(name))
+                    fields.append(DocumentField(name: "\(name)", value: .json(jsonString)))
+            """
+        }
+
+        let valueExpr: String
+        switch wrapper {
+        case "IDField", "TextField":
+            valueExpr = ".text(\(valueName))"
+        case "U64Field":
+            valueExpr = ".u64(UInt64(\(valueName)))"
+        case "I64Field":
+            valueExpr = ".i64(Int64(\(valueName)))"
+        case "F64Field":
+            valueExpr = ".f64(Double(\(valueName)))"
+        case "BoolField":
+            valueExpr = ".bool(\(valueName))"
+        case "DateField":
+            valueExpr = ".date(Int64((\(valueName).timeIntervalSince1970 * 1_000_000).rounded()))"
+        case "BytesField":
+            valueExpr = ".bytes([UInt8](\(valueName)))"
+        case "FacetField":
+            valueExpr = ".facet(String(describing: \(valueName)))"
+        default:
+            valueExpr = ".text(String(describing: \(valueName)))"
+        }
+
+        if isOptional {
+            return "if let value = \(name) { fields.append(DocumentField(name: \"\(name)\", value: \(valueExpr))) }"
+        }
+        return "fields.append(DocumentField(name: \"\(name)\", value: \(valueExpr)))"
     }
     
     private static func getDefaultValue(for typeName: String) -> String {

@@ -3,384 +3,183 @@ import Testing
 @testable import TantivySwift
 import TantivyFFI
 
-struct ReceiptIndexItem: Codable, TantivyIndexDocument {
-    enum CodingKeys: String, CodingKey {
-        case receiptId
-        case merchantName
-        case transactionDate
-        case convertedTotal
-        case notes
-        case tags
-    }
-
-    var receiptId: String
-    var merchantName: String
-    var transactionDate: Date
-    var convertedTotal: Double
-    var notes: String?
-    var tags: [String]
-
-    init(receiptId: String, merchantName: String, transactionDate: Date, convertedTotal: Double, notes: String? = nil, tags: [String]? = nil) {
-        self.receiptId = receiptId
-        self.merchantName = merchantName
-        self.transactionDate = transactionDate
-        self.convertedTotal = convertedTotal
-        self.notes = notes
-        self.tags = tags ?? []
-    }
-
-    init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-
-        let receiptIdField = try container.decode([String].self, forKey: .receiptId)
-
-        guard let receiptId = receiptIdField.first else {
-            throw DecodingError.dataCorruptedError(forKey: .receiptId, in: container, debugDescription: "receiptId field is empty")
-        }
-
-        self.receiptId = receiptId
-
-        merchantName = try container.decode([String].self, forKey: .merchantName).first ?? ""
-
-        let transactionDateField = try container.decode([String].self, forKey: .transactionDate)
-
-        guard let transactionDateStr = transactionDateField.first else {
-            throw DecodingError.dataCorruptedError(forKey: .transactionDate, in: container, debugDescription: "transactionDate field is empty")
-        }
-
-        let dateFormatter = ISO8601DateFormatter()
-
-        guard let transactionDate = dateFormatter.date(from: transactionDateStr) else {
-            throw DecodingError.dataCorruptedError(forKey: .transactionDate, in: container, debugDescription: "Invalid date format for transactionDate")
-        }
-
-        self.transactionDate = transactionDate
-
-        convertedTotal = try container.decode([Double].self, forKey: .convertedTotal).first ?? 0.0
-
-        notes = try container.decodeIfPresent([String].self, forKey: .notes)?.first
-
-        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
-    }
-
-    func encode(to encoder: any Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(receiptId, forKey: .receiptId)
-        try container.encode(merchantName, forKey: .merchantName)
-
-        // encode date as ISO8601 string
-        let dateFormatter = ISO8601DateFormatter()
-        try container.encode(dateFormatter.string(from: transactionDate), forKey: .transactionDate)
-
-        try container.encode(convertedTotal, forKey: .convertedTotal)
-
-        try container.encodeIfPresent(notes, forKey: .notes)
-        try container.encode(tags, forKey: .tags)
-    }
-
-    static func schemaJsonStr() -> String {
-        return """
-        [
-          {
-            "name": "receiptId",
-            "type": "text",
-            "options": {
-              "indexing": {
-                "record": "basic",
-                "fieldnorms": true,
-                "tokenizer": "raw"
-              },
-              "stored": true,
-              "fast": false
-            }
-          },
-          {
-            "name": "merchantName",
-            "type": "text",
-            "options": {
-              "indexing": {
-                "record": "position",
-                "fieldnorms": true,
-                "tokenizer": "unicode"
-              },
-              "stored": true,
-              "fast": false
-            }
-          },
-          {
-            "name": "transactionDate",
-            "type": "date",
-            "options": {
-              "indexed": true,
-              "fieldnorms": true,
-              "fast": false,
-              "stored": true,
-              "precision": "seconds"
-            }
-          },
-          {
-            "name": "convertedTotal",
-            "type": "f64",
-            "options": {
-              "indexed": false,
-              "fieldnorms": false,
-              "fast": true,
-              "stored": true
-            }
-          },
-          {
-            "name": "notes",
-            "type": "text",
-            "options": {
-              "indexing": {
-                "record": "position",
-                "fieldnorms": true,
-                "tokenizer": "unicode"
-              },
-              "stored": true,
-              "fast": false
-            }
-          },
-          {
-            "name": "tags",
-            "type": "text",
-            "options": {
-              "indexing": {
-                "record": "basic",
-                "fieldnorms": true,
-                "tokenizer": "raw"
-              },
-              "stored": true,
-              "fast": false
-            }
-          }
-        ]
-        """
-    }
+struct ArticleMeta: Codable, Sendable {
+    var source: String = ""
+    var rating: Int = 0
 }
 
-struct ExampleIndexDoc: Codable, TantivyIndexDocument, Sendable {
-    // custom coding keys
-    enum CodingKeys: String, CodingKey {
-        // we recommend using camelCase for tantivy doc field names
-        // but if you want to map to different JSON keys, you can do so here
+@TantivyDocument
+struct UnifiedDoc: Sendable {
+    @IDField var id: String
+    @TextField var title: String
+    @TextField var body: String
+    @F64Field var score: Double
+    @BoolField var isActive: Bool
+    @FacetField var category: String
+    @JsonField var meta: ArticleMeta
 
-        // case docId = "doc_id"
-
-        case docId
-        case title
-        case body
-    }
-
-    let docId: String
-    let title: String
-    let body: String
-
-    // since we need a custom decoder to handle Tantivy's stored field format
-    // we provide a default constructor
-    init(docId: String, title: String, body: String) {
-        self.docId = docId
+    init(id: String, title: String, body: String, score: Double, isActive: Bool, category: String, meta: ArticleMeta) {
+        self.id = id
         self.title = title
         self.body = body
-    }
-
-    init(from decoder: Decoder) throws {
-        // Tantivy returns stored fields as arrays, even for single-valued fields
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        docId = try container.decode([String].self, forKey: .docId).first ?? ""
-        title = try container.decode([String].self, forKey: .title).first ?? ""
-        body = try container.decode([String].self, forKey: .body).first ?? ""
-    }
-
-    func encode(to encoder: Encoder) throws {
-        // custom encoder in case we need to map dates etc
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(docId, forKey: .docId)
-        try container.encode(title, forKey: .title)
-        try container.encode(body, forKey: .body)
-    }
-
-    // we want to provide a better DX for schema definition
-    // but for now it is easiest to serialize with Rust code and paste here
-    static func schemaJsonStr() -> String {
-        """
-        [
-        {
-            "name": "docId",
-            "type": "text",
-            "options": {
-            "indexing": {
-                "record": "basic",
-                "fieldnorms": true,
-                "tokenizer": "raw"
-            },
-            "stored": true,
-            "fast": false
-            }
-        },
-        {
-            "name": "title",
-            "type": "text",
-            "options": {
-            "indexing": {
-                "record": "position",
-                "fieldnorms": true,
-                "tokenizer": "unicode"
-            },
-            "stored": true,
-            "fast": false
-            }
-        },
-        {
-            "name": "body",
-            "type": "text",
-            "options": {
-            "indexing": {
-                "record": "position",
-                "fieldnorms": true,
-                "tokenizer": "unicode"
-            },
-            "stored": true,
-            "fast": false
-            }
-        }
-        ]
-        """
+        self.score = score
+        self.isActive = isActive
+        self.category = category
+        self.meta = meta
     }
 }
 
-@Suite(.serialized) struct TantivySwiftIndexTests {
-    @Test func cleanup() throws {
-        let fileManager = FileManager.default
-        let indexPath = "./test_data/example_index"
-        if fileManager.fileExists(atPath: indexPath) {
-            try fileManager.removeItem(atPath: indexPath)
-        }
+private func makeIndex(_ name: String) throws -> TantivySwiftIndex<UnifiedDoc> {
+    let indexPath = "./test_data/\(name)"
+    let fileManager = FileManager.default
+    if fileManager.fileExists(atPath: indexPath) {
+        try fileManager.removeItem(atPath: indexPath)
+    }
+    return try TantivySwiftIndex<UnifiedDoc>(path: indexPath)
+}
+
+@Suite(.serialized) struct TantivySwiftTests {
+
+    @Test func schemaTemplateAndCodingKeys() throws {
+        let template = UnifiedDoc.schemaTemplate()
+        #expect(template.id == "")
+        #expect(template.title == "")
+        #expect(template.body == "")
+        #expect(template.score == 0.0)
+        #expect(template.isActive == false)
+        #expect(template.category == "")
+        #expect(template.meta.source == "")
+
+        let doc = UnifiedDoc(
+            id: "sample",
+            title: "Title",
+            body: "Body",
+            score: 1.0,
+            isActive: true,
+            category: "/sample",
+            meta: ArticleMeta(source: "swift", rating: 1)
+        )
+        let data = try JSONEncoder().encode(doc)
+        let json = String(data: data, encoding: .utf8) ?? ""
+        #expect(json.contains("\"id\""))
+        #expect(json.contains("\"title\""))
+        #expect(json.contains("\"body\""))
+        #expect(json.contains("\"category\""))
+        #expect(json.contains("\"meta\""))
     }
 
-    @Test func createIndex() async throws {
-        let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./test_data/example_index")
+    @Test func indexLifecycle() async throws {
+        let index = try makeIndex("unified_index_lifecycle")
+        try await index.clear()
+
+        let doc = UnifiedDoc(
+            id: "1",
+            title: "Swift and Rust",
+            body: "Exploring search indexes",
+            score: 9.5,
+            isActive: true,
+            category: "/tech",
+            meta: ArticleMeta(source: "swift", rating: 5)
+        )
+
+        try await index.add(doc: doc)
+        try await index.commit()
+
         let count = await index.count()
-        assert(count == 0, "Index should be empty initially")
+        #expect(count == 1)
+
+        let idField = DocumentField(field: UnifiedDoc.CodingKeys.id, value: .text("1"))
+        let exists = try await index.docExists(id: idField)
+        #expect(exists == true)
+
+        let retrieved = try await index.getDoc(id: idField)
+        #expect(retrieved?.title == "Swift and Rust")
+
+        try await index.deleteDoc(id: idField)
+        let existsAfter = try await index.docExists(id: idField)
+        #expect(existsAfter == false)
+        #expect(await index.count() == 0)
     }
 
-    @Test func indexAndCountDocuments() async throws {
-        let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./test_data/example_index")
-
+    @Test func bulkIndexAndGetDocs() async throws {
+        let index = try makeIndex("unified_index_bulk")
         try await index.clear()
-        var count = await index.count()
-        assert(count == 0, "Index should be empty after clearing")
-
-        let doc1 = ExampleIndexDoc(docId: "1", title: "First Document", body: "This is the body of the first document.")
-        let doc2 = ExampleIndexDoc(docId: "2", title: "Second Document", body: "This is the body of the second document.")
-
-        try await index.index(doc: doc1)
-        try await index.index(doc: doc2)
-
-        count = await index.count()
-        assert(count == 2, "Index should contain 2 documents after indexing")
-    }
-
-    @Test func indexMultipleDocuments() async throws {
-        let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./test_data/example_index")
-
-        try await index.clear()
-        var count = await index.count()
-        assert(count == 0, "Index should be empty after clearing")
 
         let docs = [
-            ExampleIndexDoc(docId: "3", title: "Third Document", body: "This is the body of the third document."),
-            ExampleIndexDoc(docId: "4", title: "Fourth Document", body: "This is the body of the fourth document."),
-            ExampleIndexDoc(docId: "5", title: "Fifth Document", body: "This is the body of the fifth document.")
+            UnifiedDoc(id: "a1", title: "Alpha", body: "First letter", score: 1.0, isActive: true, category: "/letters", meta: ArticleMeta(source: "alpha", rating: 1)),
+            UnifiedDoc(id: "b2", title: "Beta", body: "Second letter", score: 2.0, isActive: false, category: "/letters", meta: ArticleMeta(source: "beta", rating: 2)),
+            UnifiedDoc(id: "c3", title: "Charlie", body: "Third letter", score: 3.0, isActive: true, category: "/letters", meta: ArticleMeta(source: "charlie", rating: 3)),
         ]
 
-        try await index.index(docs: docs)
+        try await index.add(docs: docs)
+        try await index.commit()
+        #expect(await index.count() == 3)
 
-        count = await index.count()
-        assert(count == 3, "Index should contain 3 documents after indexing multiple documents")
+        let extra = UnifiedDoc(id: "d4", title: "Delta", body: "Fourth letter", score: 4.0, isActive: true, category: "/letters", meta: ArticleMeta(source: "delta", rating: 4))
+        try await index.index(doc: extra)
+        #expect(await index.count() == 4)
+
+        let more = UnifiedDoc(id: "e5", title: "Echo", body: "Fifth letter", score: 5.0, isActive: false, category: "/letters", meta: ArticleMeta(source: "echo", rating: 5))
+        try await index.index(docs: [more])
+        #expect(await index.count() == 5)
+
+        let retrieved = try await index.getDocs(ids: [
+            DocumentField(field: UnifiedDoc.CodingKeys.id, value: .text("a1")),
+            DocumentField(field: UnifiedDoc.CodingKeys.id, value: .text("b2")),
+        ])
+        #expect(retrieved.count == 2)
     }
 
-    @Test func retrieveDocument() async throws {
-        let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./test_data/example_index")
-
-        let docIdToRetrieve = "3"
-        let doc = try await index.getDoc(idField: .docId, idValue: docIdToRetrieve)
-
-        assert(doc != nil, "Document with docId \(docIdToRetrieve) should exist")
-        assert(doc?.title == "Third Document", "Retrieved document title should match")
-    }
-
-    @Test func deleteDocument() async throws {
-        let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./test_data/example_index")
-
-        let docIdToDelete = "4"
-        try await index.deleteDoc(idField: .docId, idValue: docIdToDelete)
-
-        // we keep the error behavior and use try? to return nil if not found
-        let doc = try? await index.getDoc(idField: .docId, idValue: docIdToDelete)
-
-        assert(doc == nil, "Document with docId \(docIdToDelete) should have been deleted")
-
-        let count = await index.count()
-
-        assert(count == 2, "Index should contain 2 documents after deletion")
-    }
-
-    @Test func searchDocuments() async throws {
-        let index = try TantivySwiftIndex<ExampleIndexDoc>(path: "./test_data/example_index")
-
-        let query = TantivySwiftSearchQuery<ExampleIndexDoc>(
-            queryStr: "fifth",
-            defaultFields: [.title, .body],
-            fuzzyFields: [
-                TantivySwiftFuzzyField(field: .title, prefix: true, distance: 2, transposeCostOne: false),
-                TantivySwiftFuzzyField(field: .body, prefix: true, distance: 2, transposeCostOne: false),
-            ]
-        )
-        let results = try await index.search(query: query)
-
-        assert(results.count == 1, "Search should return 1 document")
-        assert(results.docs.first?.doc.docId == "5", "Search result should be the document with docId 5")
-    }
-
-    @Test func complexIndex() async throws {
-        let index = try TantivySwiftIndex<ReceiptIndexItem>(path: "./test_data/receipt_index")
-
+    @Test func searchQueries() async throws {
+        let index = try makeIndex("unified_index_search")
         try await index.clear()
-        var count = await index.count()
-        assert(count == 0, "Index should be empty after clearing")
 
-        // there are optional fields here, so it is a test for serialization/deserialization as well
-        let receipt = ReceiptIndexItem(
-            receiptId: "r1",
-            merchantName: "Starbucks Coffee",
-            transactionDate: Date(),
-            convertedTotal: 4.50
+        let doc1 = UnifiedDoc(
+            id: "1",
+            title: "Swift and Rust",
+            body: "Exploring search indexes",
+            score: 10.0,
+            isActive: true,
+            category: "/tech",
+            meta: ArticleMeta(source: "swift", rating: 5)
+        )
+        let doc2 = UnifiedDoc(
+            id: "2",
+            title: "Cooking Pasta",
+            body: "Simple recipes",
+            score: 6.0,
+            isActive: false,
+            category: "/food",
+            meta: ArticleMeta(source: "kitchen", rating: 4)
         )
 
-        try await index.index(doc: receipt)
+        try await index.index(docs: [doc1, doc2])
 
-        count = await index.count()
-        assert(count == 1, "Index should contain 1 document after indexing a receipt")
+        let textQuery = TantivyQuery.queryString(
+            TantivyQueryString(
+                query: "swift",
+                defaultFields: ["title", "body"]
+            )
+        )
+        let facetQuery = TantivyQuery.term(
+            TantivyQueryTerm(name: "category", value: .facet("/tech"))
+        )
+        let combined = TantivyQuery.boolean([
+            TantivyBooleanClause(occur: .must, query: textQuery),
+            TantivyBooleanClause(occur: .must, query: facetQuery),
+        ])
 
-        let doc = try await index.getDoc(idField: .receiptId, idValue: "r1")
-        assert(doc != nil, "Document with receiptId r1 should exist")
-        assert(doc?.merchantName == "Starbucks Coffee", "Retrieved document merchantName should match")
+        let results = try await index.search(query: combined, limit: 10, offset: 0)
+        #expect(results.count == 1)
+        #expect(results.docs.first?.doc.id == "1")
 
-        let query = TantivySwiftSearchQuery<ReceiptIndexItem>(
-            queryStr: "coffee",
-            defaultFields: [.merchantName, .notes, .tags],
-            fuzzyFields: [
-                .init(field: .merchantName, prefix: true, distance: 2),
-                .init(field: .notes, prefix: true, distance: 2),
-            ],
-            limit: 20,
-            offset: 0
+        let query = TantivySwiftSearchQuery<UnifiedDoc>(
+            queryStr: "pasta",
+            defaultFields: [.title, .body]
         )
 
-        let results = try await index.search(query: query)
-
-        assert(results.count == 1, "Search should return 1 document")
-        assert(results.docs.first?.doc.receiptId == "r1", "Search result should be the document with receiptId r1")
+        let results2 = try await index.search(query: query)
+        #expect(results2.count == 1)
+        #expect(results2.docs.first?.doc.id == "2")
     }
 }
