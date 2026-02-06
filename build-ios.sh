@@ -3,7 +3,7 @@
 set -ex
 
 # arch targets to build for
-TARGETS_LIST="aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin"
+TARGETS_LIST="aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-darwin x86_64-apple-darwin"
 IFS=' ' read -r -a TARGETS <<< "${TARGETS_LIST}"
 
 OUT_DIR="./out"
@@ -22,6 +22,11 @@ HEADERS_DIR="${BUILD_DIR}/Headers"
 HEADER_DIR="${HEADERS_DIR}/${HEADER_SUBPATH}"
 HEADER_FILE="${HEADER_SUBPATH}.h"
 MODULEMAP_FILE="${HEADER_SUBPATH}.modulemap"
+
+SIM_UNIVERSAL_DIR="${BUILD_DIR}/ios-sim-universal"
+SIM_UNIVERSAL_LIB="${SIM_UNIVERSAL_DIR}/${STATICLIB_NAME}"
+MAC_UNIVERSAL_DIR="${BUILD_DIR}/macos-universal"
+MAC_UNIVERSAL_LIB="${MAC_UNIVERSAL_DIR}/${STATICLIB_NAME}"
 
 XCFRAMEWORK_NAME="lib${LIB_BASENAME}-rs"
 XCFRAMEWORK_DIR="${BUILD_DIR}/${XCFRAMEWORK_NAME}.xcframework"
@@ -47,10 +52,21 @@ cp "${OUT_DIR}/module.modulemap" "${HEADER_DIR}/"
 mkdir -p "${SOURCE_DIR}"
 cp "${OUT_DIR}/${SWIFT_SRC_FILE}" "${SOURCE_DIR}/"
 
+mkdir -p "${SIM_UNIVERSAL_DIR}" "${MAC_UNIVERSAL_DIR}"
+lipo -create \
+  "./target/aarch64-apple-ios-sim/release/${STATICLIB_NAME}" \
+  "./target/x86_64-apple-ios/release/${STATICLIB_NAME}" \
+  -output "${SIM_UNIVERSAL_LIB}"
+
+lipo -create \
+  "./target/aarch64-apple-darwin/release/${STATICLIB_NAME}" \
+  "./target/x86_64-apple-darwin/release/${STATICLIB_NAME}" \
+  -output "${MAC_UNIVERSAL_LIB}"
+
 XCF_ARGS=()
-for target in "${TARGETS[@]}"; do
-  XCF_ARGS+=(-library "./target/${target}/release/${STATICLIB_NAME}" -headers "${HEADERS_DIR}")
-done
+XCF_ARGS+=(-library "./target/aarch64-apple-ios/release/${STATICLIB_NAME}" -headers "${HEADERS_DIR}")
+XCF_ARGS+=(-library "${SIM_UNIVERSAL_LIB}" -headers "${HEADERS_DIR}")
+XCF_ARGS+=(-library "${MAC_UNIVERSAL_LIB}" -headers "${HEADERS_DIR}")
 xcodebuild -create-xcframework "${XCF_ARGS[@]}" -output "${XCFRAMEWORK_DIR}"
 
 ditto -c -k --sequesterRsrc --keepParent "${XCFRAMEWORK_DIR}" "${XCFRAMEWORK_ZIP}"
