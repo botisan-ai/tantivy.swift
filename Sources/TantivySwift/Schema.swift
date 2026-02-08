@@ -662,9 +662,23 @@ public struct TantivyDocumentFieldMap: Sendable {
         return value
     }
 
+    public func texts(_ name: String) -> [String] {
+        values(for: name).compactMap { value in
+            guard case let .text(text) = value else { return nil }
+            return text
+        }
+    }
+
     public func u64(_ name: String) -> UInt64? {
         guard case let .u64(value) = firstValue(for: name) else { return nil }
         return value
+    }
+
+    public func u64s(_ name: String) -> [UInt64] {
+        values(for: name).compactMap { value in
+            guard case let .u64(number) = value else { return nil }
+            return number
+        }
     }
 
     public func i64(_ name: String) -> Int64? {
@@ -672,9 +686,23 @@ public struct TantivyDocumentFieldMap: Sendable {
         return value
     }
 
+    public func i64s(_ name: String) -> [Int64] {
+        values(for: name).compactMap { value in
+            guard case let .i64(number) = value else { return nil }
+            return number
+        }
+    }
+
     public func f64(_ name: String) -> Double? {
         guard case let .f64(value) = firstValue(for: name) else { return nil }
         return value
+    }
+
+    public func f64s(_ name: String) -> [Double] {
+        values(for: name).compactMap { value in
+            guard case let .f64(number) = value else { return nil }
+            return number
+        }
     }
 
     public func bool(_ name: String) -> Bool? {
@@ -682,9 +710,23 @@ public struct TantivyDocumentFieldMap: Sendable {
         return value
     }
 
+    public func bools(_ name: String) -> [Bool] {
+        values(for: name).compactMap { value in
+            guard case let .bool(boolean) = value else { return nil }
+            return boolean
+        }
+    }
+
     public func date(_ name: String) -> Date? {
         guard case let .date(value) = firstValue(for: name) else { return nil }
         return Date(timeIntervalSince1970: TimeInterval(value) / 1_000_000)
+    }
+
+    public func dates(_ name: String) -> [Date] {
+        values(for: name).compactMap { value in
+            guard case let .date(micros) = value else { return nil }
+            return Date(timeIntervalSince1970: TimeInterval(micros) / 1_000_000)
+        }
     }
 
     public func bytes(_ name: String) -> Data? {
@@ -692,14 +734,35 @@ public struct TantivyDocumentFieldMap: Sendable {
         return value
     }
 
+    public func bytesValues(_ name: String) -> [Data] {
+        values(for: name).compactMap { value in
+            guard case let .bytes(bytes) = value else { return nil }
+            return bytes
+        }
+    }
+
     public func facet(_ name: String) -> String? {
         guard case let .facet(value) = firstValue(for: name) else { return nil }
         return value
     }
 
+    public func facets(_ name: String) -> [String] {
+        values(for: name).compactMap { value in
+            guard case let .facet(facet) = value else { return nil }
+            return facet
+        }
+    }
+
     public func json(_ name: String) -> String? {
         guard case let .json(value) = firstValue(for: name) else { return nil }
         return value
+    }
+
+    public func jsons(_ name: String) -> [String] {
+        values(for: name).compactMap { value in
+            guard case let .json(json) = value else { return nil }
+            return json
+        }
     }
 }
 

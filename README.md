@@ -140,6 +140,53 @@ var count: UInt64
 var timestamp: Date
 ```
 
+## Array / Multi-Value Compatibility
+
+Tantivy documents are multi-valued by design (a field can appear more than once in the same document). With `@TantivyDocument`, array-typed wrapped properties are now encoded as repeated field entries and decoded back to arrays automatically.
+
+### Supported Array Types
+
+| Wrapper | Scalar Type | Array Type Supported |
+|---------|-------------|----------------------|
+| `@IDField` | `String` | `[String]` |
+| `@TextField` | `String` | `[String]` |
+| `@U64Field` | `UInt64` | `[UInt64]` |
+| `@I64Field` | `Int64` | `[Int64]` |
+| `@F64Field` / `@DoubleField` | `Double` | `[Double]` |
+| `@BoolField` | `Bool` | `[Bool]` |
+| `@DateField` | `Date` | `[Date]` |
+| `@BytesField` | `Data` | `[Data]` |
+| `@FacetField` | `String` (facet path) | `[String]` |
+| `@JsonField` | `T: Codable` | `[T]` |
+
+### Example
+
+```swift
+@TantivyDocument
+struct Receipt: Sendable {
+    @IDField var id: String
+
+    @TextField(tokenizer: .raw, record: .basic, stored: true, fast: false, fieldnorms: true)
+    var tags: [String] = []
+
+    @FacetField(stored: true)
+    var receiptTagIds: [String] = []
+
+    @U64Field(indexed: true, stored: true, fast: true, fieldnorms: false)
+    var amounts: [UInt64] = []
+}
+```
+
+### Notes
+
+- `@FacetField` values must be valid facet paths (e.g. `"/receipt/tags/groceries"`).
+- For date term queries, use microseconds epoch values (`.date(Int64)`), and keep your `@DateField(precision: ...)` setting in mind.
+- `@IDField` with arrays is supported technically, but most apps should keep IDs single-valued for uniqueness semantics.
+
+If you are working with raw `TantivyDocumentFields` directly, `TantivyDocumentFieldMap` also provides plural helpers for multi-value reads:
+
+- `texts`, `u64s`, `i64s`, `f64s`, `bools`, `dates`, `bytesValues`, `facets`, `jsons`
+
 ## API Reference
 
 ### TantivySwiftIndex
