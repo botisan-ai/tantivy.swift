@@ -10,12 +10,12 @@ use tantivy::Term;
 use tantivy::collector::Count;
 use tantivy::collector::TopDocs;
 use tantivy::directory::MmapDirectory;
+use tantivy::query::Occur;
 use tantivy::query::{
     AllQuery, BooleanQuery, BoostQuery, ConstScoreQuery, DisjunctionMaxQuery, EmptyQuery,
     ExistsQuery, FuzzyTermQuery, PhrasePrefixQuery, PhraseQuery, QueryParser, RangeQuery,
     RegexQuery, TermQuery, TermSetQuery,
 };
-use tantivy::query::Occur;
 
 use tantivy::schema::{
     DateOptions as TantivyDateOptions, DateTimePrecision, Facet, FacetOptions, FieldType,
@@ -418,9 +418,7 @@ impl TantivySchemaBuilder {
             }
 
             if options.fast {
-                let tokenizer = options
-                    .fast_tokenizer
-                    .map(|tokenizer| tokenizer.as_str());
+                let tokenizer = options.fast_tokenizer.map(|tokenizer| tokenizer.as_str());
                 opts = opts.set_fast(tokenizer);
             }
 
@@ -509,10 +507,20 @@ pub struct TantivyBooleanClause {
 pub enum TantivyQueryDsl {
     All,
     Empty,
-    Term { term: DocumentField },
-    TermSet { terms: Vec<DocumentField> },
-    Boolean { clauses: Vec<TantivyBooleanClause> },
-    Phrase { field: String, terms: Vec<String>, slop: Option<u32> },
+    Term {
+        term: DocumentField,
+    },
+    TermSet {
+        terms: Vec<DocumentField>,
+    },
+    Boolean {
+        clauses: Vec<TantivyBooleanClause>,
+    },
+    Phrase {
+        field: String,
+        terms: Vec<String>,
+        slop: Option<u32>,
+    },
     PhrasePrefix {
         field: String,
         terms: Vec<String>,
@@ -525,16 +533,27 @@ pub enum TantivyQueryDsl {
         include_lower: bool,
         include_upper: bool,
     },
-    Regex { field: String, pattern: String },
+    Regex {
+        field: String,
+        pattern: String,
+    },
     Fuzzy {
         field: String,
         term: String,
         distance: u8,
         transpose_cost_one: bool,
     },
-    Exists { field: String },
-    Boost { query: Box<TantivyQueryDsl>, boost: f32 },
-    ConstScore { query: Box<TantivyQueryDsl>, score: f32 },
+    Exists {
+        field: String,
+    },
+    Boost {
+        query: Box<TantivyQueryDsl>,
+        boost: f32,
+    },
+    ConstScore {
+        query: Box<TantivyQueryDsl>,
+        score: f32,
+    },
     DisjunctionMax {
         queries: Vec<TantivyQueryDsl>,
         tie_breaker: Option<f32>,
@@ -589,9 +608,7 @@ fn term_from_field_value(
 ) -> Result<Term, TantivyIndexError> {
     let field_type = schema.get_field_entry(field).field_type();
     match (field_type, value) {
-        (FieldType::Str(_), FieldValue::Text(text)) => {
-            Ok(Term::from_field_text(field, text))
-        }
+        (FieldType::Str(_), FieldValue::Text(text)) => Ok(Term::from_field_text(field, text)),
         (FieldType::U64(_), FieldValue::U64(val)) => Ok(Term::from_field_u64(field, *val)),
         (FieldType::I64(_), FieldValue::I64(val)) => Ok(Term::from_field_i64(field, *val)),
         (FieldType::F64(_), FieldValue::F64(val)) => Ok(Term::from_field_f64(field, *val)),
@@ -600,9 +617,7 @@ fn term_from_field_value(
             let dt = tantivy::DateTime::from_timestamp_micros(*ts);
             Ok(Term::from_field_date(field, dt))
         }
-        (FieldType::Bytes(_), FieldValue::Bytes(bytes)) => {
-            Ok(Term::from_field_bytes(field, bytes))
-        }
+        (FieldType::Bytes(_), FieldValue::Bytes(bytes)) => Ok(Term::from_field_bytes(field, bytes)),
         (FieldType::Facet(_), FieldValue::Facet(path)) => {
             let facet = Facet::from_text(path)?;
             Ok(Term::from_facet(field, &facet))
@@ -828,7 +843,8 @@ impl TantivyQueryDsl {
                     None => Bound::Unbounded,
                 };
 
-                if matches!(lower_bound, Bound::Unbounded) && matches!(upper_bound, Bound::Unbounded)
+                if matches!(lower_bound, Bound::Unbounded)
+                    && matches!(upper_bound, Bound::Unbounded)
                 {
                     return Err(TantivyIndexError::QueryError(
                         "Range query requires at least one bound".to_string(),
@@ -1073,10 +1089,7 @@ impl TantivyIndex {
             let retrieved_doc: TantivyDocument = searcher.doc(*doc_address)?;
             doc_to_fields(&schema, retrieved_doc)
         } else {
-            Err(TantivyIndexError::DocRetrievalError(format!(
-                "{}",
-                id.name
-            )))
+            Err(TantivyIndexError::DocRetrievalError(format!("{}", id.name)))
         }
     }
 
@@ -1177,7 +1190,10 @@ impl TantivyIndex {
         for (score, doc_address) in top_docs {
             let retrieved_doc: TantivyDocument = searcher.doc(doc_address)?;
             let doc_fields = doc_to_fields(&schema, retrieved_doc)?;
-            docs.push(TantivySearchResult { score, doc: doc_fields });
+            docs.push(TantivySearchResult {
+                score,
+                doc: doc_fields,
+            });
         }
 
         Ok(TantivySearchResults {
